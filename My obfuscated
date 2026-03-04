@@ -1,0 +1,22 @@
+-- Шаблон алерта
+local template = [[
+	Обнаружено получение содержимого файла формата sh из GitHub и его исполнение посредством bash.
+
+    Узел: 
+    {{ if .First.observer.host.ip }}IP - "{{ .First.observer.host.ip }}"{{ else }}"IP-адрес неопределен"{{ end }}
+    {{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
+    Пользователь(инициатор загрузки): {{ .Meta.user_name1 }}
+    Команда получения скрипта: {{ .Meta.first_command }}
+    Путь исполнения: {{ .Meta.command_path1 }}
+    Пользователь(инициатор выполнения): {{ .Meta.user_name2 }}
+    Команда выполнения скрипта: {{ .Meta.second_command }}
+    Путь исполнения: {{ .Meta.command_path2 }} 
+]]
+
+-- Переменные для групперов
+local detection_window = "3m"
+local grouped_time_field = "@timestamp,RFC3339"
+local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.event.id"}
+local grouped_by2 = {"target.file.name"}
+local aggregated_by1 = {"observer.event.type"}
+local aggregated_by2 ={"operation.type"}

@@ -1,0 +1,53 @@
+store_local_ip_addresses = storage.new("Local IP addresses")
+
+function on_logline(logline)
+	command = logline:get("initiator.command.executed", ""):lower()
+	local message = command:split('\\\\')
+	ip1 = message[#message]:split('\\')
+	ip = ip1[1]
+	if 
+	(
+		substr(command, "copy")) 
+		and substr(command, "c$\\") 
+		and substr(command, "\\\\")
+		and compare(store_local_ip_addresses:search("ip", ip), "~=", nil) then
+		grouper1:feed(logline)
+	end
+end
+
+function on_grouped(grouped)
+	local logline = grouped.aggregatedData.loglines[1]
+	if grouped.aggregatedData.aggregated.total >= 1 then
+		alert(
+			{template = [[
+                        Обнаружено выполнение команды копирования данных из директории C$ с другого узла.
+                        
+                        На узле [{{ .First.observer.host.ip }}] - [{{ .First.observer.host.hostname }}], 
+			            Пользователем: {{ if .First.initiator.user.name }} "{{ .First.initiator.user.name }}" {{ else }} "{{ .First.initiator.user.id }}" {{ end }},
+                        Была выполнена команда: "{{ .First.initiator.command.executed}}",
+                        Окружение, из которого выполнялась команда: {{ if .First.initiator.process.parent.path.original }} "{{ .First.initiator.process.parent.path.original}}". {{ else }} "{{ .First.observer.service.name}}".{{ end }}
+			]],
+			risk_level = 4.0,
+			asset_ip = logline:get_asset_data("observer.host.ip"),
+			asset_hostname = logline:get_asset_data("observer.host.hostname"),
+			asset_fqdn = logline:get_asset_data("observer.host.fqdn"),
+			asset_mac = logline:get_asset_data(""),
+			create_incident = true, incident_group = "",
+			assign_to_customer = false,
+			incident_identifier = "",
+			logs = grouped.aggregatedData.loglines,
+			mitre = {"T1039"},
+			trim_logs = 5
+            }
+        )
+		grouper1:clear()
+	end
+end
+
+grouper1 = grouper.new(
+	{"observer.host.ip", "observer.host.hostname", "observer.host.fqdn"},
+	{"observer.host.ip", "observer.host.hostname", "observer.host.fqdn"},
+	"@timestamp,RFC3339",
+	"1m",
+	on_grouped
+)

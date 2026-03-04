@@ -1,0 +1,102 @@
+-- Шаблон алерта
+local template = [[
+	Подозрение на очистку журналов аудита с помощью системных утилит.
+
+    Узел: 
+    {{ if .First.observer.host.ip }}IP - "{{ .First.observer.host.ip }}"{{ else }}"IP-адрес неопределен"{{ end }}
+    {{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
+    Пользователь(инициатор): {{ .Meta.user_name }}
+    Выполненная команда: {{ .Meta.command }}
+    Окружение, из которого выполнялась команда: {{ .Meta.command_path }}
+]]
+
+-- Переменные для групера
+local detection_window = "1m"
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.event.id"}
+local aggregated_by = {"observer.event.type"}
+local grouped_time_field = "@timestamp,RFC3339"
+
+-- Массив с регулярными выражениями
+local log_name = "(?:\\/var\\/(?:log|lib)|(?:~|[\\/\\w\\-_]+\\/home|\\/root)\\/\\.(?:local\\/share|cache|config)|\\/(?:opt|srv)[\\/\\w\\-_\\*]+\\/log(s))(\\/[\\/\\w\\-_\\*]+(\\.log)?)?"
+local log_cleaner_patterns = {
+        "(?:^|\\/|\\s+|\"|\')rm\\s+([-\\w\\s=]+)+" .. log_name,
+        "(?:^|\\/|\\s+|\"|\')truncate\\s+([-a-z\\d\\s=]+)+" .. log_name,
+        "(?:^|\\/|\\s+|\"|\')unlink\\s+" .. log_name,
+        "(?:^|\\/|\\s+|\"|\')find\\s+" .. log_name .. "[\\-\\w\\s+]+-exec\\s+(?:sh|truncate)\\s+[\\-a-z\\d\\s_>\"$]+\\{\\}\\s*(?:;|\\+)?",
+        "(?:^|\\/|\\s+|\"|\')cat\\s+\\/dev\\/(?:null|zero)\\s+>\\s+" .. log_name    
+}
+-- Универсальная функция: возвращает true/false если проходит регулярка
+local function analyze(cmd)
+    local cmd_string = cmd:lower()
+    
+    for _, pattern in pairs(log_cleaner_patterns) do
+            local regular = cmd_string:search(pattern)
+            log(pattern)
+            if regular then
+                return regular
+            end
+        
+    end
+end
+
+-- Функция работы с логлайном
+function on_logline(logline)
+    if logline:gets("observer.event.type") == "EXECVE" or logline:gets("observer.event.type") == "PROCTITLE" then
+		local search_log_cleaner = analyze(logline:gets("initiator.command.executed"))
+        if search_log_cleaner then
+            grouper1:feed(logline)
+		end
+    else
+        grouper1:feed(logline)
+    end
+end
+
+-- Функция сработки группера
+function on_grouped(grouped)
+    local events = grouped.aggregatedData.loglines
+    local log_sys = ""
+    local log_exec = ""
+
+    for _, event in ipairs(events) do
+        if event:gets("observer.event.type") == "SYSCALL" then
+            log_sys = event
+        else
+            log_exec = event
+        end
+    end
+
+-- Проверяем, что в группере находятся как события EXECVE/PROCTITLE, так и SYSCALL        
+    if log_sys ~= "" and log_exec ~= "" then
+        local command_executed=log_exec:gets("initiator.command.executed")
+        local command_length=command_executed:len().. "..."
+        if command_length > 128 then
+            command_executed=command_executed:sub(1,128)
+        end
+        -- Функция алерта
+        alert({
+            template = template,
+            meta = {
+                user_name=log_sys:gets("initiator.user.name"),
+                command=command_executed,
+                command_path=log_sys:gets("initiator.process.path.full")
+                },
+            risk_level = 8.0, 
+            asset_ip = log_exec:get_asset_data("observer.host.ip"),
+            asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
+            asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
+            asset_mac = "",
+            create_incident = true,
+            incident_group = "",
+            assign_to_customer = false,
+            incident_identifier = "",
+            logs = grouped.aggregatedData.loglines,
+            mitre = {"T1070.002"},
+            trim_logs = 10
+            }
+        )
+        grouper1:clear()      
+    end
+end
+
+-- Группер
+grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
