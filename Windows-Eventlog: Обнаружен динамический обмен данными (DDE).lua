@@ -59,9 +59,6 @@ function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
 
-    log("Events: " ..#events)
-    log("Command: " ..events[1]:gets("initiator.command.executed"))
-
     if unique_events > 1 then
        local initiator_name = events[1]:get("initiator.user.name") or "Пользователь не определен" 
        local host_ip = events[1]:get_asset_data("observer.host.ip")

@@ -33,9 +33,23 @@ end
 
 function on_logline(logline)
     local cmd = logline:gets("initiator.command.executed", "")
+    local event_id = logline:gets("observer.event.id", "")
     
-    if analyze(cmd) then
-        grouper1:feed(logline)
+    if tostring(event_id) == "4103" then
+        cmd = cmd:lower()
+        
+        if cmd == "get-content" then
+            local attr_value = logline:gets("target.object.attribute.value", "")
+            local is_text_file = attr_value:search("\\.(?:txt|log|conf|config|ini|json|xml|yaml|yml|csv|dat|bak|cfg|properties|credentials|pwd|password|secret|key|inf)$")
+            
+            if is_text_file then
+                grouper1:feed(logline)    
+            end
+        end
+    else
+        if analyze(cmd) then
+            grouper1:feed(logline)
+        end
     end
 end
 
@@ -43,9 +57,23 @@ function on_grouped(grouped)
     if grouped.aggregatedData.aggregated.total >= 1 then
         local events = grouped.aggregatedData.loglines 
         local command_executed = events[1]:gets("initiator.command.executed")
-        local path_execued = events[1]:gets("initiator.process.path.name") or events[1]:gets("target.image.name")
-        local parent_path = events[1]:get("initiator.process.parent.path.original") or events[1]:get("initiator.process.path.name")
+        
+        local path_name = events[1]:get("initiator.process.path.name")
+        local image_name = events[1]:get("target.image.name")
+        local attribute_value = events[1]:get("target.object.attribute.value")
+        local service_name = events[1]:get("observer.service.name")
+
+        local path_original = events[1]:get("initiator.process.parent.path.original")
+
+        
+        local path_executed = path_name or image_name or attribute_value or service_name or "Путь неопределён"
+        local parent_path = path_original or path_name or service_name or "Процесс неопределён"
         local initiator_name = events[1]:get("initiator.user.name") or "Пользователь неопределен"
+
+        if events[1]:get("observer.event.id") == 4104 then 
+            path_executed = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+            parent_path = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        end
 
         if #command_executed > 128 then
             command_executed = command_executed:sub(1,128).. "... "
@@ -55,7 +83,7 @@ function on_grouped(grouped)
             template = template,
             meta = {
                 command=command_executed,
-                path=path_execued,
+                path=path_executed,
                 parent=parent_path,
                 user_name=initiator_name
             },
