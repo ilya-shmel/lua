@@ -12,42 +12,22 @@ local template = [[
 
 -- Переменные для группера
 local detection_window = "3m"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.event.id", "event.thread.id"}
-local aggregated_by = {"image.type"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname"}
+local aggregated_by = {"target.image.name"}
 local grouped_time_field = "@timestamp,RFC3339"
-
-local function set_type(event, image_type)
-    set_field_value(event, "image.type", image_type)
-    return event
-
-end
 
 -- Функция работы с логлайном
 function on_logline(logline)
-    local image_name = logline:gets("target.image.name")
-    local event = nil
-    
-    if image_name:match("_server%.exe") then
-        event = set_type(logline, "server")
-    elseif image_name:match("_client%.exe") then
-        event = set_type(logline, "client")
-    else
-        event = set_type(logline, "executor")
-    end
-    
-    log("Image name: " ..tostring(image_name))
-    log("Event type: " ..type(image_name))
-    log("Event type: " ..type(logline))
-    log("Event is: " ..tostring(event))
-
-    
-    grouper1:feed(event)
+    grouper1:feed(logline)
 end
 
 -- Функция сработки группера
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
+
+    log("Events #: " ..#events)
+    log("Event uniques: " ..unique_events)
 
     if unique_events > 2 then
        local initiator_name = events[1]:get("initiator.user.name") or "Пользователь не определен" 
@@ -82,6 +62,7 @@ function on_grouped(grouped)
             trim_logs = 10
             }
         )
+       
        grouper1:clear()
     end
 end
