@@ -11,48 +11,26 @@ local template = [[
 ]]
 
 -- Переменные для группера
-local detection_window = "1m"
+local detection_window = "3m"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn"}
-local aggregated_by = {"initiator.user.name"}
+local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
-
--- Регулярные выражения
-local pwn_pattern = "(?:^|\\/|\\s+|\"|\'|{)((iex\\(new-object|import-module)(.+)(?:winpwn\\.ps1|powersharp(.+)(?:rubeus|Internalmonologue|seatbelt|sharpup)\\.ps1)|spoolvulnscan|MS17-10|bluekeep|fruit)(?:$|\\/|\\s+|\"|\'|})"
-
--- Функция анализа строки
-local function analyze(cmd)
-    local cmd_string = cmd:lower()
-    local is_command = cmd_string:search(pwn_pattern)
-
-    if is_command then 
-        return true
-    end
-    
-    return false
-end
 
 -- Функция работы с логлайном
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
 
-    
-    if event_id == 4768 then
+    if event_id == 4768 or event_id == 4104 then
        grouper1:feed(logline) 
-    elseif 
-        local command_executed = logline:gets("initiator.command.executed")
-        local is_pwn = analyze(command_executed)
-    end
-    
-    if is_pwn then
-       grouper1:feed(logline)
     end
 end
 
 -- Функция сработки группера
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
-    log("Events: " ..#events)
-    if #events > 0 then
+    local unique_events = grouped.aggregatedData.unique.total
+
+    if unique_events > 1 then
        local initiator_name = events[1]:get("initiator.user.name") or "Пользователь не определен" 
        local host_ip = events[1]:get_asset_data("observer.host.ip")
        local host_name = events[1]:get_asset_data("observer.host.hostname")
