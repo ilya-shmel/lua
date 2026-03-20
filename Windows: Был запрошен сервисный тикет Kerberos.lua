@@ -13,7 +13,7 @@ local template = [[
     {{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
     Пользователь (инициатор): {{ .Meta.user_name }}
     Тип шифрования: {{.Meta.encryption}}
-    Критичность: {{.Meta.vulnerability}}   
+    Критичность - {{.Meta.vulnerability}}   
 ]]
 
 local critical_encryption_types = {
@@ -131,8 +131,9 @@ function on_grouped(grouped)
        local host_name = events[1]:get_asset_data("observer.host.hostname")
        local host_fqdn = events[1]:get_asset_data("observer.host.fqdn")
        local encryption_type = events[1]:gets("initiator.auth.encryption.original")
-       local encryption_type = encryption_type .. " (" .. critical_encryption_types.name .. ")"
-       local vulnerability_caption = critical_encryption_types.description
+       local encryption_caption = critical_encryption_types[encryption_type]
+       local encryption_type = encryption_type .. " (" .. encryption_caption.name .. ")"
+       local vulnerability_caption = encryption_caption.description
        local service_name = events[1]:get("target.service.name") or "Служба не определена"
        
        alert({
@@ -156,6 +157,7 @@ function on_grouped(grouped)
             trim_logs = 10
             }
         )
+       
        grouper1:clear()
     end
 end
