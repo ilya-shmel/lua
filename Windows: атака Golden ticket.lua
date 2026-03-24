@@ -11,7 +11,7 @@ local template = [[
 Процесс: {{.Meta.process_path}}
 ]]
 
-local detection_window1 = "10m"
+local detection_window = "10m"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "operation.type"}
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
@@ -267,23 +267,28 @@ function on_logline(logline)
     
     if is_attack then
         set_field_value(logline, "operation.type", "command")
-        grouper2:feed(logline)
+        grouper1:feed(logline)
     end
 end
 
 -- Функция работы группера
-function on_grouped1(grouped)
+function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local suspicious_tgs = 0
     local suspicios_kerberos = 0
 
-    if events > 1 then
+    log("Events: " ..#events)
+    log("Operation Type: " ..events[1]:gets("operation.type"))
+    if #events > 1 then
+        log("Events more than one")
         local user_name = events[1]:get("initiator.user.name") or events[1]:get("target.user.name") or "Не определено"
-        local host_ip = events[1]:get("observer.host.ip", "Не определено")
+        local host_ip = events[1]:get("observer.host.ip") or events[1]:get("reportchain.collector.host.ip")
         local host_name = events[1]:get("observer.host.hostname", "Не определено")
-        local host_fqdn = events[1]:get("observer.host.fqdn", "Не определено")  
+        local host_fqdn = events[1]:get("observer.host.fqdn", "Не определено") 
+        local operation_type = events[1]:gets("operation.type")    
         
-        if event[1]:gets("operation.type") == "command" and #events > 1 then
+        if operation_type == "command" and #events > 1 then
+            log("Raising alert!")
             local command_executed = events[1]:get("initiator.command.executed")
             local process_path = events[1]:get("initiator.process.path.full") or events[1]:get("initiator.process.path.name")
             
