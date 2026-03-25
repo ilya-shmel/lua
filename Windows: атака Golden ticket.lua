@@ -22,6 +22,7 @@ local golden_ticket_tools_regex = prefix.. "(?:(invoke-)?mimikatz(\\.exe)?|(?:ke
 local dcsync_patterns_regex = prefix.. "(?:lsadump|\\/user|privilege|sekurlsa|crypto):{1,2}(?:dcsync|krbtgt|debug|msv|logonpasswords|tickets|capi|cng|sam|secrets|backupkeys|dpapi)" ..suffix
 local krbtgt_patterns_regex = prefix.. "(?:kerberos::(?:list|tgt|purge|ptc)|\\/(?:rc4|aes(?:128|256)):\\w{32,64}|\\/(?:de|group|sid)s:|\\/(?:ex|im)port|/ticket|\\s+golden|\\s+krbtgt|\\/startoffset|\\/endin|\\/ptt|\\/id|\\/user:[\\w\\.\\-$]+|\\/domain:[\\w\\.\\-]+|\\/sid:S-1-5-21-[-,\\d]+|\\/krbtgt:\\w{32,})" ..suffix
 local powershell_kerberos_patterns_regex = prefix.. "(?:get(-)?(?:authorizationgroups|current.*principal|(net)?domain(?:spnticket|user)|userhunter)|invoke-(?:kerberoast|userhunter)|(?:\\[|assemblyname\\s+)system\\.identitymodel(\\.tokens\\.kerberosrequestorsecuritytoken)?|add\\-type.*identitymodel|new\\-object.*kerberos)" ..suffix
+local golden_monitoring = "^{\\s+if\\s+[($\\w\\s]+-match\\s+[\"\'\\w\\s){]+break[\\s}]+$"
 
 local suspicious_event_codes = {"4768", "4769", "4624", "4634", "4672", "4673", "4648"}
 
@@ -56,6 +57,7 @@ end
 -- Стандартная функция анализа строк на предмет прохождения регулярного выражения
 local function analyze(cmd)
     cmd = cmd:lower()
+    if cmd:search(golden_monitoring) then return false end
     return cmd:search(golden_ticket_tools_regex) or cmd:search(dcsync_patterns_regex) or cmd:search(krbtgt_patterns_regex) or cmd:search(powershell_kerberos_patterns_regex)
 end
 
