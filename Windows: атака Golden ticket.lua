@@ -3,12 +3,11 @@ local template = [[
 
 
 ЦЕЛЕВОЙ УЗЕЛ:
-{{ if .First.observer.host.ip }}IP - "{{ .First.observer.host.ip }}"{{ else }}"IP-адрес неопределен"{{ end }}
-{{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
+IP-адрес: {{ .Meta.host_ip }}
+Имя узла: {{ .Meta.host_name }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Тип шифрования: {{.Meta.encryption}}
-Критичность - {{.Meta.vulnerability}}   
-Процесс: {{.Meta.process_path}}
+Выполнена команда: {{.Meta.command}}
+Процесс: {{.Meta.command_path}}   
 ]]
 
 local detection_window = "10m"
@@ -27,13 +26,15 @@ local powershell_kerberos_patterns_regex = prefix.. "(?:get(-)?(?:authorizationg
 local suspicious_event_codes = {"4768", "4769", "4624", "4634", "4672", "4673", "4648"}
 
 -- Функция вызова алерта
-local function alert_function(cmd,user,path,ip,hostname,fqdn, events)
+local function alert_function(cmd, user, path, ip, hostname, fqdn, events)
     alert({
             template = template,
             meta = {
                 user_name=user,
                 command=cmd,
-                command_path=path
+                command_path=path,
+                host_ip=ip,
+                host_name=hostname
                 },
             risk_level = 8.0, 
             asset_ip = ip,
@@ -49,6 +50,7 @@ local function alert_function(cmd,user,path,ip,hostname,fqdn, events)
             trim_logs = 10
             }
         )
+    log("Hostname: " ..hostname)
 end
 
 -- Стандартная функция анализа строк на предмет прохождения регулярного выражения
@@ -290,7 +292,11 @@ function on_grouped(grouped)
         if operation_type == "command" and #events > 1 then
             log("Raising alert!")
             local command_executed = events[1]:get("initiator.command.executed")
-            local process_path = events[1]:get("initiator.process.path.full") or events[1]:get("initiator.process.path.name")
+            if #command_executed > 128 then
+                command_executed = command_executed:sub(1,128)
+            end
+
+            local process_path = events[1]:get("initiator.process.path.full") or events[1]:get("initiator.process.path.name") or events[1]:get("event.logsource.application")
             
             alert_function(command_executed, user_name, process_path, host_ip, host_name, host_fqdn, events)
             grouper1:clear()            
