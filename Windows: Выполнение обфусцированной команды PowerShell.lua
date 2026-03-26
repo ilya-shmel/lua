@@ -82,6 +82,7 @@ local function calculate_entropy(string)
         local probability = count / length
         entropy = entropy - (probability * math.log(probability) / math.log(2))
     end
+    
     return entropy
 end
 
@@ -105,12 +106,15 @@ local function analyze_obfuscation(cmd)
             end
 -- Количественные проверки
         elseif item.condition == "count" then
-            if cmd:search(pattern) then
-                if item.score == 1 then
-                    backtick_count = backtick_count + 1
-                elseif item.score == 0.5 then
-                    replace_count = replace_count + 1
+            for _, pattern in ipairs(item.patterns) do
+                if cmd:search(pattern) then
+                    if item.score == 1 then
+                        replace_count = replace_count + 1
+                    elseif item.score == 0.5 then
+                        backtick_count = backtick_count + 1
+                    end
                 end
+            end
         end
     end
 
@@ -130,31 +134,51 @@ local function analyze_obfuscation(cmd)
     local max_depth = 0      -- максимальная достигнутая глубина
     
     for index = 1, #cmd do
-    local char = #cmd:sub(index, index)  -- берём очередной символ
+        local char = cmd:sub(index, index)  -- берём очередной символ
     
-    if char == "(" then
-        parent_depth = parent_depth + 1           -- открыли скобку → глубина +1
-        max_depth = math.max(max_depth, parent_depth)  -- обновляем максимум
-        
-    elseif char == ")" then
-        parent_depth = parent_depth - 1           -- закрыли скобку → глубина -1
-    end
+        if char == "(" then
+            parent_depth = parent_depth + 1           -- открыли скобку → глубина +1
+            max_depth = math.max(max_depth, parent_depth)  -- обновляем максимум
 
-    if max_depth > 6 then
-        score = score + (max_depth - 6)
-        table.insert(indicators, "ЧРЕЗМЕРНОЕ ВЛОЖЕНИЕ")
+        elseif char == ")" then
+            parent_depth = parent_depth - 1           -- закрыли скобку → глубина -1
+        end
+
+        if max_depth > 6 then
+            score = score + (max_depth - 6)
+            table.insert(indicators, "ЧРЕЗМЕРНОЕ ВЛОЖЕНИЕ")
+        end
     end
  
+-- Энтропия переменных (динамическая проверка)
+    local variable_entropy_total = 0
+--    local variable_names = cmd:gmatch("%$([%w_]+)")
+
+    for variable in cmd:gmatch("%$([%w_]+)") do
+        if #variable > 4 then
+            local entropy = calculate_entropy(variable)
+            if entropy > 2.5 then
+                variable_entropy_total = variable_entropy_total + entropy
+                table.insert(indicators, string.format("ВЫСОКАЯ ЭНТРОПИЯ ПЕРЕМЕННОЙ: %s (%.1f)", variable:sub(1, 8), entropy))
+            end
+        end
+    end
+
+    score = score + (variable_entropy_total * 0.3)
+
     return score, indicators
 end
 
 -- Функция обработки логлайна
 function on_logline(logline)
     local path_name = logline:gets("initiator.process.path.name"):lower()
-    local command_executed = logline:gets("initiator.command.executed")
+    local command_executed = logline:get("initiator.command.executed")
+    local type = type(command_executed)
+--    log("Command length: " ..#command_executed)
+--    log("command_executed type = ", type)
     
 -- Отбрасываем служебные директории
-    if path:startswith(diag_pattern) or path:search(path_pattern) then return end
+    if path_name:startswith(diag_pattern) or path_name:search(path_pattern) then return end
 
     local score, indicators = analyze_obfuscation(command_executed)
 
@@ -169,6 +193,7 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local indicator_text = ""
+    log("Events in grouper: " ..events)
 
     if #events > 0 then
         local best_event = nil
@@ -227,6 +252,8 @@ function on_grouped(grouped)
                 mitre = {"T1558.001", "T1059.001", "T1027"},
                 trim_logs = 10
             })
+        end
+    end
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
