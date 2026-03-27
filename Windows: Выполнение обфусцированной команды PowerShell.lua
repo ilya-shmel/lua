@@ -14,14 +14,16 @@ IP-адрес: {{ .Meta.host_ip }}
 
 -- Параметры группера
 local detection_window = "2m"
-local grouped_by = {"observer.host.ip", "initiator.user.name"}
-local aggregated_by = {"observer.host.ip", "initiator.user.name"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "score"}
+local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
 local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)?"
 local suffix = "(?:$|\\s+|\"|\'|`|\\||&|\\\\)?"
-local path_pattern = "c:\\\\program files\\\\powershell\\d+\\\\modules"
+local lua_prefix = "[^%w]?"
+local lua_suffix = "[^%w]?"
+local path_pattern = "c:\\\\program files\\\\powershell\\\\\\d+\\\\modules"
 local diag_pattern = "c:\\\\windows\\\\temp\\\\sdiag_"
 
 local obfuscation_patterns = {
@@ -34,7 +36,7 @@ local obfuscation_patterns = {
     {
         name = "ЗАПУТЫВАНИЕ ФОРМАТА СТРОКИ", 
         score = 2,
-        patterns = {prefix.. "type\\s+(.*)?-f" ..suffix},
+        patterns = {prefix.. "type[^f]*-f" ..suffix},
         condition = "any"  
     },
     {
@@ -51,25 +53,25 @@ local obfuscation_patterns = {
     },
     {
         name = "МНОГОКРАТНАЯ ЗАМЕНА",
-        patterns = {prefix.. "\\.replace" ..suffix},
+        patterns = {lua_prefix.. "%.replace" ..lua_suffix},
         condition = "count",  -- особый тип: считаем количество вхождений
         threshold = 2, -- минимальное количество для срабатывания
         multiplier = 1
     },
     {
         name = "ЗАПУТЫВАНИЕ ОБРАТНОГО ХОДА",
-        patterns = {prefix.. "`" ..suffix},
+        patterns = {lua_prefix.. "`" ..lua_suffix},
         condition = "count", 
         threshold = 2, 
         multiplier = 0.5
     },
     {
         name = "ПРЕОБРАЗОВАНИЕ ЧИСЛОВЫХ МАССИВОВ",
-        score = 2,
-        patterns = {prefix.. "\\(\\d+,\\s*\\d+" ..suffix},
-        condition = any
+        patterns = {lua_prefix.. "%(%d+,%s*%d+" ..lua_suffix},
+        condition = "count",
+        threshold = 1,
+        multiplier = 2
     }
-
 }
 
 -- Функция вычисления меры хаотичности строки (энтропия Шеннона)
@@ -217,11 +219,14 @@ function on_grouped(grouped)
 
             local final_risk = math.min(10.0, 7.0 + (max_score * 0.3))
             local command_executed = best_event:gets("initiator.command.executed")
-            local patn_name = best_event:gets("initiator.process.path.name")
+            local path_name = best_event:get("initiator.process.path.name") or best_event:get("target.process.path.name") or best_event:get("target.image.name") or best_event:get("event.logsource.application")
             local initiator_user = best_event:get("initiator.user.name") or best_event:get("target.user.name") or "Имя пользователя не определено"
             local host_ip = best_event:get("observer.host.ip") or best_event:get("reportchain.collector.host.ip")
             local host_name = best_event:gets("observer.host.hostname", "Имя узла не определено")
 
+            if #command_executed > 128 then
+                command_executed = command_executed:sub(1,128).. "... "
+            end
 
             alert({
                 meta = {

@@ -51,7 +51,6 @@ local function alert_function(cmd, user, path, ip, hostname, fqdn, events)
             trim_logs = 10
             }
         )
-    log("Hostname: " ..hostname)
 end
 
 -- Стандартная функция анализа строк на предмет прохождения регулярного выражения
@@ -281,10 +280,7 @@ function on_grouped(grouped)
     local suspicious_tgs = 0
     local suspicios_kerberos = 0
 
-    log("Events: " ..#events)
-    log("Operation Type: " ..events[1]:gets("operation.type"))
     if #events > 1 then
-        log("Events more than one")
         local user_name = events[1]:get("initiator.user.name") or events[1]:get("target.user.name") or "Не определено"
         local host_ip = events[1]:get("observer.host.ip") or events[1]:get("reportchain.collector.host.ip")
         local host_name = events[1]:get("observer.host.hostname", "Не определено")
@@ -292,7 +288,6 @@ function on_grouped(grouped)
         local operation_type = events[1]:gets("operation.type")    
         
         if operation_type == "command" and #events > 1 then
-            log("Raising alert!")
             local command_executed = events[1]:get("initiator.command.executed")
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1,128)
@@ -302,7 +297,7 @@ function on_grouped(grouped)
             
             alert_function(command_executed, user_name, process_path, host_ip, host_name, host_fqdn, events)
             grouper1:clear()            
-        elseif event[1]:gets("operation.type") == "event" and #events > 1 then
+        elseif events[1]:gets("operation.type") == "event" and #events > 1 then
             local correlations = correlate_tgt_tgs_events(events)
 
             for _, correlation in ipairs(correlations) do
