@@ -19,8 +19,8 @@ local aggregated_by = {"observer.host.ip", "initiator.user.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
-local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)"
-local suffix = "(?:$|\\s+|\"|\'|`|\\||&|\\\\)"
+local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)?"
+local suffix = "(?:$|\\s+|\"|\'|`|\\||&|\\\\)?"
 local path_pattern = "c:\\\\program files\\\\powershell\\d+\\\\modules"
 local diag_pattern = "c:\\\\windows\\\\temp\\\\sdiag_"
 
@@ -46,24 +46,30 @@ local obfuscation_patterns = {
     {
         name = "ЗАПУТЫВАНИЕ СОЕДИНЕНИЯ СИМВОЛОВ",
         score = 3,
-        patterns = {prefix.. "join\\s+(.*)?\\[?char\\]?" ..suffix},
+        patterns = {prefix.. "(?i)(join)?\\s+(.*)?\\[?char\\]?(\\s+[\\(\\):$\\w\\s\'\"`\\[\\]\\{\\},]+)?" ..suffix},
         condition = "any" 
     },
     {
         name = "МНОГОКРАТНАЯ ЗАМЕНА",
-        score = 1,
-        patterns = {"\\.replace"},
+        patterns = {prefix.. "\\.replace" ..suffix},
         condition = "count",  -- особый тип: считаем количество вхождений
+        threshold = 2, -- минимальное количество для срабатывания
         multiplier = 1
     },
     {
         name = "ЗАПУТЫВАНИЕ ОБРАТНОГО ХОДА",
-        score = 0.5,
-        patterns = {"`"},
-        condition = "count",  -- особый тип: считаем количество вхождений
-        threshold = 2, -- минимальное количество для срабатывания
+        patterns = {prefix.. "`" ..suffix},
+        condition = "count", 
+        threshold = 2, 
         multiplier = 0.5
+    },
+    {
+        name = "ПРЕОБРАЗОВАНИЕ ЧИСЛОВЫХ МАССИВОВ",
+        score = 2,
+        patterns = {prefix.. "\\(\\d+,\\s*\\d+" ..suffix},
+        condition = any
     }
+
 }
 
 -- Функция вычисления меры хаотичности строки (энтропия Шеннона)
@@ -90,8 +96,6 @@ end
 local function analyze_obfuscation(cmd)
     local score = 0
     local indicators = {}
-    local backtick_count = 0
-    local replace_count = 0
     cmd = cmd:lower()
 
 -- Обработка паттернов типа "any"
@@ -104,29 +108,25 @@ local function analyze_obfuscation(cmd)
                     break
                 end
             end
--- Количественные проверки
+-- Количественные проверки ("count")
         elseif item.condition == "count" then
+            local total_count = 0
+-- Считаем общее количество вхождений по всем паттернам
             for _, pattern in ipairs(item.patterns) do
-                if cmd:search(pattern) then
-                    if item.score == 1 then
-                        replace_count = replace_count + 1
-                    elseif item.score == 0.5 then
-                        backtick_count = backtick_count + 1
-                    end
-                end
+-- Для подсчёта используем gsub
+                local count = select(2, cmd:gsub(pattern, ""))
+                total_count = total_count + count
+            end
+            
+            log("Total count: " ..total_count)
+
+            local threshold = item.threshold or 1
+            if total_count >= threshold then
+                local add_count = total_count * (item.multiplier or 1)
+                score = score + add_count
+                table.insert(indicators, string.format("%s (%d)", item.name, total_count))
             end
         end
-    end
-
--- Проработка количественных проверок
-    if backtick_count > 2 then
-        score = score + backtick_count * 0.5
-        table.insert(indicators, string.format("ЗАПУТЫВАНИЕ ОБРАТНОГО ХОДА (%d)", backtick_count))
-    end
-    
-    if replace_count > 2 then
-        score = score + replace_count
-        table.insert(indicators, string.format("МНОГОКРАТНАЯ ЗАМЕНА (%d)", replace_count))
     end
 
 -- Анализируем скобки
@@ -152,7 +152,6 @@ local function analyze_obfuscation(cmd)
  
 -- Энтропия переменных (динамическая проверка)
     local variable_entropy_total = 0
---    local variable_names = cmd:gmatch("%$([%w_]+)")
 
     for variable in cmd:gmatch("%$([%w_]+)") do
         if #variable > 4 then
@@ -172,15 +171,14 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local path_name = logline:gets("initiator.process.path.name"):lower()
-    local command_executed = logline:get("initiator.command.executed")
+    local command_executed = logline:gets("initiator.command.executed")
     local type = type(command_executed)
---    log("Command length: " ..#command_executed)
---    log("command_executed type = ", type)
     
 -- Отбрасываем служебные директории
     if path_name:startswith(diag_pattern) or path_name:search(path_pattern) then return end
-
     local score, indicators = analyze_obfuscation(command_executed)
+
+    log("Score: " ..score)
 
     if score >= risk_threshold then
         set_field_value(logline, "score", score)
@@ -193,7 +191,7 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local indicator_text = ""
-    log("Events in grouper: " ..events)
+    log("Events in grouper: " ..#events)
 
     if #events > 0 then
         local best_event = nil
@@ -208,12 +206,7 @@ function on_grouped(grouped)
                 max_score = event_score
                 best_event = event
 
--- Преобразуем строку обратно в таблицу
                 best_indicators = event_indicators
-                
---                for indicator in string.gmatch(event_indicators, "[^|]+") do -- вариант для строки - пока не подходит
---                    table.insert(best_indicators, indicator)
---                end
             end
         end
 
