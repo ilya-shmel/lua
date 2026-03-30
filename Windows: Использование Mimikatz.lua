@@ -48,42 +48,42 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- паттерны Mimikatz, по аналогии с multiplexer_patterns
 local mimikatz_patterns = {
     PRIVILEGE = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:privilege::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:privilege::)",
         risk = 6.5,
         mitre = {"T1134"}
     },
     SEKURLSA = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:sekurlsa::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:sekurlsa::)",
         risk = 6.5,
         mitre = {"T1003.001", "T1550.002", "T1550.003"}
     },
     KERBEROS = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:kerberos::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:kerberos::)",
         risk = 6.5,
         mitre = {"T1558.001", "T1558.002", "T1550.003"}
     },
     LSADUMP = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:lsadump::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:lsadump::)",
         risk = 6.5,
         mitre = {"T1003.002", "T1003.004", "T1003.006", "T1207", "T1098"}
     },
     TOKEN = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:token::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:token::)",
         risk = 6.5,
         mitre = {"T1134", "T1134.005"}
     },
     CRYPTO = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:crypto::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:crypto::)",
         risk = 6.5,
         mitre = {"T1649", "T1552.004"}
     },
     DPAPI = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:dpapi::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:dpapi::)",
         risk = 6.5,
         mitre = {"T1555", "T1555.003", "T1555.004"}
     },
     VAULT = {
-        pattern = "(?i)(?:^|\\s+|\"|\'|\\\\|\\/)(?:vault::)",
+        pattern = "(?:^|\\s+|\"|\'|\\\\|\\/)(?:vault::)",
         risk = 6.5,
         mitre = {"T1555", "T1555.004"}
     }
@@ -91,6 +91,8 @@ local mimikatz_patterns = {
 
 local function analyze_mimikatz(cmd)
     local found = {}
+    cmd = cmd:lower()
+
     for tech, data in pairs(mimikatz_patterns) do
         if cmd:search(data.pattern) then
             table.insert(found, {
@@ -100,17 +102,16 @@ local function analyze_mimikatz(cmd)
             })
         end
     end
+    
     return found
 end
 
 function on_logline(logline)
-
     local command = logline:gets("initiator.command.executed")
-    if command then
-        local matches = analyze_mimikatz(command)
-        if #matches > 0 then
-            grouper1:feed(logline)
-        end
+    local matches = analyze_mimikatz(command)
+    
+    if #matches > 0 then
+        grouper1:feed(logline)
     end
 end
 
@@ -125,16 +126,22 @@ function on_grouped(grouped)
         local risk_level = 0
 
         for _, logline in ipairs(grouped.aggregatedData.loglines) do
-            local command = logline:gets("initiator.command.executed", "")
+            local command = logline:gets("initiator.command.executed")
             local matches = analyze_mimikatz(command)
+
+            if #command > 128 then
+                command = command:sub(1,128).. "... "
+            end
+
 
             for _, match in ipairs(matches) do
                 local tech = match.tech
 
-                if not detected_techs[tech] then
+                if detected_techs[tech] == nil then
                     detected_techs[tech] = true
 
                     local title = threat_titles[tech]
+                    
                     if title then
                         table.insert(alert_titles_list, title)
                     end
@@ -143,15 +150,15 @@ function on_grouped(grouped)
                 end
             end
 
-            local parent = logline:gets("initiator.process.parent.path.original", "Не определено")
-            local path = logline:gets("target.process.path.full", "Не определено")
-            local key = parent .. "|" .. path .. "|" .. command
+            local parent_path = logline:get("initiator.process.parent.path.original") or "Не определен"
+            local process_path = logline:get("target.process.path.full") or logline:get("target.process.path.name") or "Не определено"
+            local key = parent_path .. "|" .. process_path .. "|" .. command
 
             if not seen[key] then
                 seen[key] = true
                 table.insert(triple_list, {
-                    parent = parent,
-                    path = path,
+                    parent = parent_path,
+                    path = process_path,
                     command = command
                 })
             end
@@ -159,15 +166,15 @@ function on_grouped(grouped)
         local alert_title = "Обнаружено использование Mimikatz:\n- " ..
             table.concat(alert_titles_list, "\n- ")
     
-        local first = grouped.aggregatedData.loglines[1]
+        local first_event = grouped.aggregatedData.loglines[1]
         local meta = {
             alert_title = alert_title,
-            observer_ip = first:gets("observer.host.ip", "Не определено"),
-            observer_hostname = first:gets("observer.host.hostname", "Не определено"),
-            observer_fqdn = first:gets("observer.host.fqdn", "Не определено"),
-            user_name = first:gets("initiator.user.name", "Не определено"),
-            user_domain = first:gets("initiator.user.domain", "Не определено"),
-            user_id = first:gets("initiator.user.id", "Не определено"),
+            observer_ip = first_event:gets("observer.host.ip", "Не определено"),
+            observer_hostname = first_event:gets("observer.host.hostname", "Не определено"),
+            observer_fqdn = first_event:gets("observer.host.fqdn", "Не определено"),
+            user_name = first_event:gets("initiator.user.name", "Не определено"),
+            user_domain = first_event:gets("initiator.user.domain", "Не определено"),
+            user_id = first_event:gets("initiator.user.id", "Не определено"),
             triple_list = triple_list
         }
 
@@ -175,9 +182,9 @@ function on_grouped(grouped)
             template = template,
             meta = meta,
             risk_level = risk_level,
-            asset_ip = first:get_asset_data("observer.host.ip"),
-            asset_hostname = first:get_asset_data("observer.host.hostname"),
-            asset_fqdn = first:get_asset_data("observer.host.fqdn"),
+            asset_ip = first_event:get_asset_data("observer.host.ip"),
+            asset_hostname = first_event:get_asset_data("observer.host.hostname"),
+            asset_fqdn = first_event:get_asset_data("observer.host.fqdn"),
             asset_mac = "",
             create_incident = true,
             incident_group = "",
@@ -191,10 +198,4 @@ function on_grouped(grouped)
     end
 end
 
-grouper1 = grouper.new(
-    grouped_by,
-    aggregated_by,
-    grouped_time_field,
-    detection_window,
-    on_grouped
-)
+grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)

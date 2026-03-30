@@ -278,26 +278,28 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local suspicious_tgs = 0
-    local suspicios_kerberos = 0
+    local suspicious_kerberos = 0
+    local all_analysis = {}
+    local first_event = events[1]
 
     if #events > 1 then
-        local user_name = events[1]:get("initiator.user.name") or events[1]:get("target.user.name") or "Не определено"
-        local host_ip = events[1]:get("observer.host.ip") or events[1]:get("reportchain.collector.host.ip")
-        local host_name = events[1]:get("observer.host.hostname", "Не определено")
-        local host_fqdn = events[1]:get("observer.host.fqdn", "Не определено") 
-        local operation_type = events[1]:gets("operation.type")    
+        local user_name = first_event:get("initiator.user.name") or first_event:get("target.user.name") or "Не определено"
+        local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip")
+        local host_name = first_event:get("observer.host.hostname", "Не определено")
+        local host_fqdn = first_event:get("observer.host.fqdn", "Не определено") 
+        local operation_type = first_event:gets("operation.type")    
         
-        if operation_type == "command" and #events > 1 then
-            local command_executed = events[1]:get("initiator.command.executed")
+        if operation_type == "command" then
+            local command_executed = first_event:get("initiator.command.executed")
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1,128)
             end
 
-            local process_path = events[1]:get("initiator.process.path.full") or events[1]:get("initiator.process.path.name") or events[1]:get("event.logsource.application")
+            local process_path = first_event:get("initiator.process.path.full") or first_event:get("initiator.process.path.name") or first_event:get("event.logsource.application")
             
             alert_function(command_executed, user_name, process_path, host_ip, host_name, host_fqdn, events)
             grouper1:clear()            
-        elseif events[1]:gets("operation.type") == "event" and #events > 1 then
+        elseif first_event:gets("operation.type") == "event" and #events > 1 then
             local correlations = correlate_tgt_tgs_events(events)
 
             for _, correlation in ipairs(correlations) do
@@ -306,19 +308,23 @@ function on_grouped(grouped)
                 end
             end
         
-            local analyze = analyze_kerberos_events(events)
+           
+            for _, event in ipairs(events) do
+                local analyze = analyze_kerberos_events(event)
+                table.insert(all_analysis, analyze)
+            end
 
-            for _, correlation in analyze do
+            for _, correlation in ipairs(all_analysis) do
                 if correlation.is_suspicious then
-                    suspicios_kerberos = suspicios_kerberos + 1
+                    suspicious_kerberos = suspicious_kerberos + 1
                 end
             end    
 
-            if suspicios_tgs > 2 or suspicios_kerberos > 2 then
-                local user_name = events[1]:get("initiator.user.name") or events[1]:get("target.user.name") or "Не определено"
-                local host_ip = events[1]:get("observer.host.ip", "Не определено")
-                local host_name = events[1]:get("observer.host.hostname", "Не определено")
-                local host_fqdn = events[1]:get("observer.host.fqdn", "Не определено")
+            if suspicios_tgs > 2 or suspicious_kerberos > 2 then
+                local user_name = first_event:get("initiator.user.name") or first_event:get("target.user.name") or "Не определено"
+                local host_ip = first_event:get("observer.host.ip", "Не определено")
+                local host_name = first_event:get("observer.host.hostname", "Не определено")
+                local host_fqdn = first_event:get("observer.host.fqdn", "Не определено")
 
                 alert_function("", user_name, "", host_ip, host_name, host_fqdn, events)
                 grouper1:clear()
