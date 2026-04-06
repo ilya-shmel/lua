@@ -19,7 +19,7 @@ local grouped_time_field = "@timestamp,RFC3339"
 local whitelist_pattern = "(?:Microsoft\\.PowerShell\\.Cmdletization|\\$script:ClassName|\\$script:ObjectModelWrapper|ArchiveResources\\.psd1)"
 local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)"
 local file_extention = "(?:txt|log|conf(?:ig)?|ini|json|xml|ya?ml|csv|dat|bak|cfg|properties|credentials|pwd|password|secret|key)"
-local pattern_read_copy = prefix.. "(?:(?:x|robo)?copy|move|type|cat|more|get-content)(?:\\.exe)?\\s+[a-z]:\\\\[\\s\\S]*?\\." ..file_extention
+local pattern_read_copy = prefix.. "(?:(?:x|robo)?copy|move|type|cat|more|get-content)(?:\\.exe[\'\"]?)?\\s+[a-z]:\\\\[\\s\\S]*?\\." ..file_extention
 local pattern_archive_transfer = prefix.. "(?:(?:x|robo)?copy|move|type|cat|more|get-content)(?:\.exe)?\\s+[a-z]:\\.*?\\.(?:txt|log|conf|config|bak|xml|inf|kdbx|key|pem|ppk|credentialstxt|secretstxt|webconfig|env)"
 local pattern_search_export = prefix.. "(?:findstr|select-string|grep)\\s+[\\s\\S]*(?:password|passwd|pwd|secret|credential|api[_-]?key|token|auth)|\\\\(?:windows\\\\system32\\\\config|etc|inetpub|programdata)\\\\[\\s\\S]*\\\\.(?:txt|log|conf|ini|xml|cfg)|(?:out-file|export-csv|export-clixml|>|>>)\\s+[^\\s]*\\.(?:txt|log|csv|json|xml|conf|config|bak)"
 
@@ -30,21 +30,6 @@ local function analyze(cmd)
         return false
     end
 
--- ОТЛАДКА: проверяем каждую регулярку по отдельности
---    local match1 = cmd:search(pattern_read_copy)
---    local match2 = cmd:search(pattern_archive_transfer)
---    local match3 = cmd:search(pattern_search_export)
---    
---    if match1 or match2 or match3 then
---        -- Выводим в лог, какая именно регулярка сработала
---        log("=== REGEX MATCH DEBUG ===")
---        log("pattern_read_copy: " .. tostring(match1))
---        log("pattern_archive_transfer: " .. tostring(match2))
---        log("pattern_search_export: " .. tostring(match3))
---        log("First 200 chars of cmd: " .. cmd:sub(1, 20))
---        log("=========================")
---        return true
---    end
     return cmd:search(pattern_read_copy) or cmd:search(pattern_archive_transfer) or cmd:search(pattern_search_export) or false
 end
 
