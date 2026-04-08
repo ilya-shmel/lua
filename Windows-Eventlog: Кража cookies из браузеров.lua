@@ -17,15 +17,16 @@ local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения, шаблоны
+local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)"
 local cookies_patterns = { 
     stop_process_pattern = {
-        pattern = "(stop-process|taskkill).*(-name|\\/im)\\s*(\"?)?(chrome|firefox|edge|opera|brave|msedge)|sqlite?\\.exe.*(cookies|moz_cookies|\\$env:[a-z]+.*cookie)"
+        pattern = "(?:stop-process|taskkill)[[\\s\\S]]*?(?:-name|\\/im)\\s*(\"?)?(?:chrome|firefox|edge|opera|brave|msedge)|sqlite?\\.exe[[\\s\\S]]*?(?:cookies|moz_cookies|\\$env:[a-z]+[[\\s\\S]]*?cookie)"
     },
     select_pattern = {
-        pattern = "select\\s+.*(encrypted_value|host_key|expires_utc|is_secure|is_httponly|samesite).*\\s+from\\s+\\[?(cookies|moz_cookies|cookie_data)\\]?"
+        pattern = "select\\s+[[\\s\\S]]*?(?:encrypted_value|host_key|expires_utc|is_secure|is_httponly|samesite)[[\\s\\S]]*?\\s+from\\s+\\[?(?:cookies|moz_cookies|cookie_data)\\]?"
     },
     sqlite_pattern = {
-        pattern = "(sqlite-tools|sqlite[234]?\\.exe|sqlitebrowser\\.exe|db\\s+browser)|(dpapi|cryptunprotectdata|system\\.security\\.cryptography\\.protecteddata)"
+        pattern = "(?:sqlite-tools|sqlite[234]?\\.exe|sqlitebrowser\\.exe|db\\s+browser)|(?:dpapi|cryptunprotectdata|system\\.security\\.cryptography\\.protecteddata)"
     }
 }
 
@@ -34,7 +35,8 @@ local function analyze(cmd)
     local cmd = cmd:lower()
 
     for _, regex_table in pairs(cookies_patterns) do
-        local is_stealing = cmd:search(regex_table.pattern) 
+        local current_pattern = prefix.."" ..regex_table.pattern
+        local is_stealing = cmd:search(current_pattern) 
         
         if is_stealing then
             return is_stealing
