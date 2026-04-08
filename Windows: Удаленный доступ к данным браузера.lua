@@ -13,7 +13,7 @@ IP-адрес: {{ .Meta.host_ip }}
 -- Параметры группера
 local detection_window = "2m"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "initiator.user.id"}
-local aggregated_by = {}
+local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Белый список (исключения)
@@ -28,50 +28,50 @@ local whitelist_patterns = {
 local device_enumeration_patterns = {
     -- USB устройства (T1120)
     usb = {
-        pattern = "(?i)(?:Get%-PnpDevice|Get%-CimInstance\\s+-ClassName\\s+Win32_USBControllerDevice|Get%-WmiObject\\s+Win32_USBControllerDevice|usbview\\.exe|USBDeview|USBLogView|DevCon\\s+find\\s+USB|pnputil\\s+/enum%-devices\\s+/class\\s+USB|reg\\s+query\\s+HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Enum\\\\USB|lsusb|lsusb%-t|usbip\\s+list%-remote|lsblk|dmesg\\s+\\|\\s+grep\\s+usb)",
-        techniques = {"T1120"}
+        pattern = "(?:get-(?:pnpdevice|ciminstance|WmiObject)(\\s+-(classname\\s+)?win32_usbcontrollerdevice)|usb(?:de|log)?view(\\.exe)?|devcon\\s+find\\s+usb|pnputil\\s+\\/enum-devices\\s+\\/class\\s+usb|reg\\s+query\\s+hklm\\\\system\\\\currentcontrolset\\\\enum\\\\usb|(?:ls)?usb(?:-t|ip)(\\\\s+list-remote)|lsblk|dmesg\\s+\\|\\s+grep\\s+usb)",
+        mitre = {"T1120"}
     },
     
     -- HID устройства (клавиатуры, мыши)
     hid = {
-        pattern = "(?i)(?:Get%-PnpDevice\\s+-Class\\s+(?:Keyboard|Mouse|HID)|Get%-CimInstance\\s+Win32_Keyboard|Get%-WmiObject\\s+Win32_PointingDevice|Get%-CimInstance\\s+Win32_PointingDevice|reg\\s+query\\s+HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Enum\\\\HID)",
-        techniques = {"T1120"}
+        pattern = "(?:get-(?:pnpdevice|ciminstance|wmiobject)\\s+(-class\\s+(?:keyboard|mouse|hid))|win32_(?:keyboard|pointingdevice)|reg\\s+query\\s+hklm\\\\system\\\\currentcontrolset\\\\enum\\\\hid)",
+        mitre = {"T1120"}
     },
     
     -- Принтеры и сканеры
     printer_scanner = {
-        pattern = "(?i)(?:Get%-Printer|Get%-CimInstance\\s+Win32_Printer|Get%-WmiObject\\s+Win32_Printer|wmic\\s+printer\\s+list\\s+brief|lpstat\\s+-p|lpinfo\\s+-v|scanimage\\s+%-L)",
-        techniques = {"T1120"}
+        pattern = "(?:get-(?:printer|ciminstance|wmiobject)(\\s+win32_printer)?|wmic\\s+printer\\s+list\\s+brief|lp(?:stat|info)\\s+-[pv]|scanimage\\s+-l)",
+        mitre = {"T1120"}
     },
     
     -- Камеры
     camera = {
-        pattern = "(?i)(?:Get%-PnpDevice\\s+-Class\\s+Image|Get%-CimInstance\\s+Win32_PnPEntity\\s+\\|\\s+Where%-Object\\s+\\{.*Camera|reg\\s+query\\s+HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Enum\\\\USB\\s+\\|\\s+findstr\\s+[Cc]amera|ls\\s+/dev/video|v4l2%-ctl\\s+%-%-list%-devices)",
-        techniques = {"T1120", "T1025"}
+        pattern = "(?:get-(?:pnpdevice|ciminstance)\\s+(?:-class\\s+image|win32_pnpentity\\s+\\|\\s+where%-object\\s+\\{[\\s\\S]*?camera)|reg\\s+query\\s+hklm\\\\system\\\\currentcontrolset\\\\enum\\\\usb\\s+\\|\\s+findstr\\s+camera|ls\\s+\\/dev\\/video|v4l2-ctl\\s+--list-devices)",
+        mitre = {"T1120", "T1025"}
     },
     
     -- Bluetooth устройства
     bluetooth = {
-        pattern = "(?i)(?:Get%-PnpDevice\\s+-Class\\s+Bluetooth|Get%-CimInstance\\s+Win32_PnPEntity\\s+\\|\\s+Where%-Object\\s+\\{.*Bluetooth|Get%-WinUserLanguageList|Get%-NetAdapter\\s+\\|\\s+Where%-Object\\s+\\{.*Bluetooth|reg\\s+query\\s+HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Enum\\\\BTH|bluetoothctl\\s+list|hcitool\\s+scan|rfkill\\s+list)",
-        techniques = {"T1120"}
+        pattern = "(?:get-(?:pnpdevice|ciminstance|winuserlanguagelist|netadapter)\\s+(?:-class\\s+bluetooth|win32_pnpentity\\s+\\|\\s+where-object\\s+\\{[\\s\\S]*?bluetooth)|reg\\s+query\\s+hklm\\\\system\\\\currentcontrolset\\\\enum\\\\bth|bluetoothctl\\s+list|hcitool\\s+scan|rfkill\\s+list)",
+        mitre = {"T1120"}
     },
     
     -- Диски и тома (T1539, T1025)
     disks_volumes = {
-        pattern = "(?i)(?:Get%-Volume|Get%-Disk|Get%-Partition|Get%-PhysicalDisk|Get%-CimInstance\\s+Win32_LogicalDisk|Get%-WmiObject\\s+Win32_LogicalDisk|wmic\\s+logicaldisk\\s+list\\s+brief|fsutil\\s+fsinfo\\s+drives|mountvol|diskpart\\s+list\\s+volume|lsblk|fdisk\\s+%-l|df\\s+%-h|blkid)",
-        techniques = {"T1539", "T1025"}
+        pattern = "(?:get-(?:volume|disk|partition|physicaldisk|ciminstance|wmiobject)\\s+?(?:win32_logicaldisk)?|wmic\\s+logicaldisk\\s+list\\s+brief|fsutil\\s+fsinfo\\s+drives|mountvol|diskpart\\s+list\\s+volume|(ls)?blk(id)?|fdisk\\s+-l|df\\s+-h)",
+        mitre = {"T1539", "T1025"}
     },
     
     -- Сетевые адаптеры
     network_adapters = {
-        pattern = "(?i)(?:Get%-NetAdapter|Get%-CimInstance\\s+Win32_NetworkAdapter|Get%-WmiObject\\s+Win32_NetworkAdapter|wmic\\s+nic\\s+list\\s+brief|ipconfig\\s+/all|ifconfig\\s+%-a|ip\\s+link\\s+show|lspci\\s+\\|\\s+grep\\s+[Ee]thernet)",
-        techniques = {"T1120"}
+        pattern = "(?:get-(?:netadapter|ciminstance|wmiobject)\\s+?(?:win32_networkadapter)?|wmic\\s+nic\\s+list\\s+brief|ipconfig\\s+\\/all|ifconfig\\s+-a|ip\\s+link\\s+show|lspci\\s+\\|\\s+grep\\s+ethernet)",
+        mitre = {"T1120"}
     },
     
     -- Шина PCI (обнаружение всего подключенного)
     pci = {
-        pattern = "(?i)(?:Get%-PnpDevice\\s+-Class\\s+PCI|Get%-CimInstance\\s+Win32_PnPEntity\\s+\\|\\s+Where%-Object\\s+\\{.*PCI|wmic\\s+path\\s+Win32_PnPEntity\\s+get\\s+DeviceID\\s+\\|\\s+findstr\\s+PCI|lspci|lspci\\s+-v|dmidecode|ls\\s+/sys/bus/pci/devices)",
-        techniques = {"T1120", "T1025"}
+        pattern = "(?:get-(?:pnpdevice|ciminstance)\\s+(?:-class\\s+pci|win32_pnpentity\\s+\\|\\s+where-object\\s+\\{[\\s\\S]*?PCI)|wmic\\s+path\\s+win32_pnpentity\\s+get\\s+deviceid\\s+\\|\\s+findstr\\s+pci|lspci(\\s+-v)?|dmidecode|ls\\s+\\/sys\\/bus\\/pci\\/devices)",
+        mitre = {"T1120", "T1025"}
     }
 }
 
@@ -92,17 +92,19 @@ local function analyze_device_enumeration(cmd, image_name)
     local detected = {}
     local techniques = {}
     
-    for name, rule in pairs(device_enumeration_patterns) do
-        if cmd:search(rule.pattern) then
+    for name, rule in ipairs(device_enumeration_patterns) do
+        local is_enumeration = cmd:search(rule.pattern)
+        if is_enumeration then
             table.insert(detected, name)
-            for _, tech in ipairs(rule.techniques) do
-                techniques[tech] = true
+            for _, techique in ipairs(rule.mitre) do
+--                log("Tech: " ..technique)
+                techniques[technique] = true
             end
         end
     end
     
-    -- Дополнительная проверка по имени процесса (WMI/PowerShell)
-    if image_name and image_name:lower():search("(?:wmic|powershell|cmd|cscript|wscript)") then
+-- Дополнительная проверка по имени процесса (WMI/PowerShell)
+    if image_name:lower():search("(?:wmic|powershell|cmd|cscript|wscript)") then
         -- Если процесс подозрительный, но паттерны не сработали, проверяем специфичные флаги
         if cmd:search("(?:list|enum|get|query)\\s+(?:device|pnp|usb|drive|volume|adapter)") then
             table.insert(detected, "generic_enumeration")
@@ -131,25 +133,23 @@ end
 
 -- Функция работы с логлайном
 function on_logline(logline)
-    local command_executed = logline:gets("initiator.command.executed") or ""
-    local target_image = logline:get("target.image.name") or logline:get("initiator.process.image.name") or ""
-    
-    -- Если нет команды и нет образа процесса — выходим
-    if command_executed == "" and target_image == "" then
-        return
-    end
+    local command_executed = logline:gets("initiator.command.executed")
+    local target_image = logline:get("target.image.name") or logline:gets("initiator.process.image.name")
     
     local abuse_info = analyze(command_executed, target_image)
-    
+
     if abuse_info then
-        -- Добавляем информацию о сработавших паттернах в logline
-        logline:set_field("abuse.detected_patterns", table.concat(abuse_info.detected, ", "))
+-- Добавляем информацию о сработавших паттернах в logline
+        local abuse_detected_patterns =  table.concat(abuse_info.detected, ", ")
+        set_field_value(logline, "abuse.detected.patterns", abuse_detected_patterns)
         
         local techniques_list = {}
-        for tech, _ in pairs(abuse_info.techniques) do
-            table.insert(techniques_list, tech)
+        for techique, _ in pairs(abuse_info.techniques) do
+            table.insert(techniques_list, techique)
         end
-        logline:set_field("abuse.techniques", table.concat(techniques_list, ","))
+        
+        local techniques_table = table.concat(techniques_list, ",")
+        set_field_value(logline, "abuse.techniques", techniques_table)
         
         grouper1:feed(logline)
     end
@@ -157,29 +157,25 @@ end
 
 -- Функция сработки группера
 function on_grouped(grouped)
-    if not grouped.aggregatedData.loglines or #grouped.aggregatedData.loglines == 0 then
-        return
-    end
-    
     local events = grouped.aggregatedData.loglines
     local first_event = events[1]
     
     local initiator_name = first_event:get("initiator.user.name") or "Пользователь не определён"
-    local host_ip = first_event:get_asset_data("observer.host.ip") or first_event:get("observer.host.ip")
-    local host_name = first_event:get_asset_data("observer.host.hostname") or first_event:get("observer.host.hostname")
-    local command_executed = first_event:gets("initiator.command.executed") or ""
+    local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip")
+    local host_name = first_event:get("observer.host.hostname") or "Имя узла не определено"
+    local command_executed = first_event:gets("initiator.command.executed")
     local process_path = first_event:get("initiator.process.path.full") or first_event:get("initiator.process.path.name") or "Путь не определён"
     local detected_patterns = first_event:get("abuse.detected_patterns") or "Неизвестно"
     local techniques_str = first_event:get("abuse.techniques") or "T1120"
     
     -- Разбиваем техники на таблицу
     local mitre_techniques = {}
-    for tech in ways(techniques_str, ",") do
-        table.insert(mitre_techniques, tech)
+    for technique in ways(techniques_str, ",") do
+        table.insert(mitre_techniques, technique)
     end
     
-    if #command_executed > 256 then
-        command_executed = command_executed:sub(1, 256) .. "..."
+    if #command_executed > 128 then
+        command_executed = command_executed:sub(1, 128).. "..."
     end
     
     -- Формируем имя для инцидента
@@ -191,11 +187,11 @@ function on_grouped(grouped)
             user_name = initiator_name,
             command = command_executed,
             process = process_path,
-            host_ip = host_ip or "",
-            hostname = host_name or "",
+            host_ip = host_ip,
+            hostname = host_name,
             detected_patterns = detected_patterns
         },
-        risk_level = 6.5,
+        risk_level = 5.0,
         asset_ip = host_ip or "",
         asset_hostname = host_name or "",
         asset_fqdn = first_event:get_asset_data("observer.host.fqdn") or "",
@@ -210,16 +206,6 @@ function on_grouped(grouped)
     })
     
     grouper1:clear()
-end
-
--- Вспомогательная функция для разбиения строки (если нужна)
-function ways(str, delim)
-    if not str then return {} end
-    local result = {}
-    for match in (str .. delim):gmatch("(.-)" .. delim) do
-        table.insert(result, match)
-    end
-    return result
 end
 
 -- Инициализация группера
