@@ -24,11 +24,13 @@ local function analyze(cmd)
     local cmd_string = cmd:lower()
 
     for i, pattern in pairs(regex_patterns) do
-        regular = cmd_string:search(pattern)
+        local regular = cmd_string:search(pattern)
         if regular then
             return regular
         end
     end
+
+    return false
 end
 
 -- Функция обработки логлайна

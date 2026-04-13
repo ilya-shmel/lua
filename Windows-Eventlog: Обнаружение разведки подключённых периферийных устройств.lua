@@ -136,51 +136,54 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local first_event = events[1]
-        
-    local initiator_name = first_event:get("initiator.user.name") or "Пользователь не определён"
-    local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip")
-    local host_name = first_event:get("observer.host.hostname") or "Имя узла не определено"
-    local command_executed = first_event:gets("initiator.command.executed")
-    local process_path = first_event:get("initiator.process.path.full") or first_event:get("initiator.process.path.name") or "Путь не определён"
-    local detected_patterns = first_event:get("abuse.detected_patterns") or "Неизвестно"
-    local techniques_names = first_event:get("abuse.techniques") or "T1120"
-    
-    -- Разбиваем техники на таблицу
-    local mitre_techniques = techniques_names:split(",")
-    --mitre_techniques = techniques_names:split(",")
 
-    if #command_executed > 128 then
-        command_executed = command_executed:sub(1, 128).. "..."
+    if #events > 0 then
+        
+        local initiator_name = first_event:get("initiator.user.name") or "Пользователь не определён"
+        local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip")
+        local host_name = first_event:get("observer.host.hostname") or "Имя узла не определено"
+        local command_executed = first_event:gets("initiator.command.executed")
+        local process_path = first_event:get("initiator.process.path.full") or first_event:get("initiator.process.path.name") or "Путь не определён"
+        local detected_patterns = first_event:get("abuse.detected_patterns") or "Неизвестно"
+        local techniques_names = first_event:get("abuse.techniques") or "T1120"
+
+        -- Разбиваем техники на таблицу
+        local mitre_techniques = techniques_names:split(",")
+        --mitre_techniques = techniques_names:split(",")
+
+        if #command_executed > 128 then
+            command_executed = command_executed:sub(1, 128).. "..."
+        end
+
+        -- Формируем имя для инцидента
+        local incident_id = (host_name or "unknown") .. "_" .. (initiator_name or "unknown") .. "_device_enum"
+
+        alert({
+            template = template,
+            meta = {
+                user_name = initiator_name,
+                command = command_executed,
+                process = process_path,
+                host_ip = host_ip,
+                hostname = host_name,
+                detected_patterns = detected_patterns
+            },
+            risk_level = 5.0,
+            asset_ip = host_ip or "",
+            asset_hostname = host_name or "",
+            asset_fqdn = first_event:get_asset_data("observer.host.fqdn") or "",
+            asset_mac = "",
+            create_incident = true,
+            incident_group = "Device Enumeration",
+            assign_to_customer = false,
+            incident_identifier = incident_id,
+            logs = events,
+            mitre = mitre_techniques,
+            trim_logs = 10
+        })
+
+        grouper1:clear()
     end
-    
-    -- Формируем имя для инцидента
-    local incident_id = (host_name or "unknown") .. "_" .. (initiator_name or "unknown") .. "_device_enum"
-    
-    alert({
-        template = template,
-        meta = {
-            user_name = initiator_name,
-            command = command_executed,
-            process = process_path,
-            host_ip = host_ip,
-            hostname = host_name,
-            detected_patterns = detected_patterns
-        },
-        risk_level = 5.0,
-        asset_ip = host_ip or "",
-        asset_hostname = host_name or "",
-        asset_fqdn = first_event:get_asset_data("observer.host.fqdn") or "",
-        asset_mac = "",
-        create_incident = true,
-        incident_group = "Device Enumeration",
-        assign_to_customer = false,
-        incident_identifier = incident_id,
-        logs = events,
-        mitre = mitre_techniques,
-        trim_logs = 10
-    })
-    
-    grouper1:clear()
 end
 
 -- Инициализация группера
