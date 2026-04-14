@@ -67,6 +67,8 @@ local indicators = {
 -- Универсальная функция: возвращает true/false если проходит регулярка/паттерн
 local function analyze (string, type)
     string = string:lower()
+    log("Current string: " ..string)
+    log("Type: " ..type)
     local comparation_type = "sub"
     local indicator_list = indicators[type]
     
@@ -74,43 +76,44 @@ local function analyze (string, type)
         comparation_type = "exact"
     end
 
+    log("Inicator: " ..tostring(indicator_list).. ", String: " ..string.. ", Comparation type: " ..comparation_type)
     local is_pattern = contains(indicator_list, string, comparation_type)
+    log("Is pattern: " ..tostring(is_pattern))
 
     if is_pattern then
         return true
+    else
+        return false
     end
-
-    return false
-    
 end   
 
 -- Функция обработки логлайна
 function on_logline(logline)
     local event_type = logline:gets("observer.event.type")
-    
-    if event_type == "EXECVE" then
-        local command_executed = logline:gets("initiator.command.executed")
-        local target_sha1 = logline:gets("target.blacklist.file.sha1")
-        local indicator_type = nil
-        local is_sha_indicator = nil
-        local is_command_indicator = nil
+    local command_executed = logline:gets("initiator.command.executed")
+    local target_sha1 = logline:gets("target.blacklist.file.sha1")
+    local indicator_type = nil
+    local is_sha_indicator = nil
+    local is_command_indicator = nil
 
-        log("SHA1: " ..target_sha1)
-        log("Command: " ..command_executed)
-        if target_sha1 then
-            log("Checking SHA...") 
+    if event_type == "EXECVE" then
+
+        if #target_sha1 > 0 then
             is_sha_indicator = analyze(target_sha1, "malicious_hashes")
-            log("Is SHA? " ..tostring(is_sha_indicator))
             indicator_type = "malicious_hashes"
-        else    
+        elseif #command_executed > 0 then    
             for indicator_name, _ in pairs(indicators) do
                 is_command_indicator = analyze(command_executed, indicator_name)
-                indicator_type = indicator_name
+                
+                if is_command_indicator then
+                    indicator_type = indicator_name
+                    break
+                end
+                
             end
         end
 
         if is_sha_indicator or is_command_indicator then
-           log("Sending event to grouper1")
            set_field_value(logline, "indicator.type", indicator_type)
            grouper1:feed(logline) 
         end
@@ -127,6 +130,10 @@ function on_grouped(grouped)
     local log_exec = nil
 
     if unique_events > 1 then
+        log("Events counter: " ..#events)
+        log("Unique events: " ..unique_events)
+        local event_type = events[1]:gets("observer.event.type")
+        log("Event type: " ..event_type)
 
         for _, event in ipairs(events) do
             local event_type = event:gets("observer.event.type")
@@ -138,53 +145,51 @@ function on_grouped(grouped)
             end
         end
 
-        log("Events counter: " ..#events)
-                local initiator_path = log_exec:gets("initiator.process.path.full")
-                local command_executed = log_exec:get("initiator.command.executed") or "Команда отсутствует"
-                local indicator_type = log_exec:gets("indicator.type")
-                local initiator_name = log_sys:get("initiator.user.name") or "Пользователь неопределен"
-                local malicious_hash = log_exec:get("target.blacklist.file.sha1") or "Для данного инцидента хэш отсутствует"
-                local host_ip = log_sys:get("observer.host.ip") or "IP-адрес не определён"
-                local host_name = log_sys:get("observer.host.hostname") or "Имя узла не определено"
-
-                if indicator_type == "malicious_hashes" then
-                    indicator_type = "Найден хэш файла Umbreon"
-                else
-                    indicator_type = "Выполнение подозрительной команды в нестандартных директориях или копирование подозрительных файлов"
-                end
-
-                if #command_executed > 128 then
-                    command_executed = command_executed:sub(1,128).. "... "
-                end
+        local initiator_path = log_exec:gets("initiator.process.path.full")
+        local command_executed = log_exec:get("initiator.command.executed") or "Команда отсутствует"
+        local indicator_type = log_exec:gets("indicator.type")
+        local initiator_name = log_sys:get("initiator.user.name") or "Пользователь неопределен"
+        local malicious_hash = log_exec:get("target.blacklist.file.sha1") or "Для данного инцидента хэш отсутствует"
+        local host_ip = log_sys:get("observer.host.ip") or "IP-адрес не определён"
+        local host_name = log_sys:get("observer.host.hostname") or "Имя узла не определено"
+        local host_fqdn = log_sys:get("observer.host.fqdn") or "FQDN узла не определено"
+        if indicator_type == "malicious_hashes" then
+            indicator_type = "Найден хэш файла Umbreon"
+        else
+            indicator_type = "Выполнение подозрительной команды в нестандартных директориях или копирование подозрительных файлов"
+        end
+        if #command_executed > 128 then
+            command_executed = command_executed:sub(1,128).. "... "
+        end
                
 -- Функция алерта
-                alert({
-                    template = template,
-                    meta = {
-                        user_name=initiator_name,
-                        command=command_executed,
-                        command_path=initiator_path,
-                        hash=malicious_hash,
-                        host_ip=host_ip,
-                        hostname=host_name,
-                        caption=indicator_type
-                        },
-                    risk_level = 10, 
-                    asset_ip = host_ip,
-                    asset_hostname = hostname,
-                    asset_fqdn = first_event:get_asset_data("observer.host.fqdn"),
-                    asset_mac = "",
-                    create_incident = true,
-                    incident_group = "",
-                    assign_to_customer = false,
-                    incident_identifier = "Rootkit",
-                    logs = events,
-                    mitre = {"T1014"},
-                    trim_logs = 10
-                    }
-                )
-                grouper1:clear()
-        end    
+        alert({
+            template = template,
+            meta = {
+                user_name=initiator_name,
+                command=command_executed,
+                command_path=initiator_path,
+                hash=malicious_hash,
+                host_ip=host_ip,
+                hostname=host_name,
+                caption=indicator_type
+                },
+            risk_level = 10, 
+            asset_ip = host_ip,
+            asset_hostname = hostname,
+            asset_fqdn = host_fqdn,
+            asset_mac = "",
+            create_incident = true,
+            incident_group = "",
+            assign_to_customer = false,
+            incident_identifier = "Rootkit",
+            logs = events,
+            mitre = {"T1014"},
+            trim_logs = 10
+            }
+        )
+        grouper1:clear()
+    end    
 end
 
 -- Группер
