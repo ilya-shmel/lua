@@ -43,7 +43,6 @@ end
 -- Функция сработки группера
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
-    log("Events in a grouper: " ..#events)
     local unique_events = grouped.aggregatedData.unique.total
     local log_sys = nil
     local log_exec = nil
