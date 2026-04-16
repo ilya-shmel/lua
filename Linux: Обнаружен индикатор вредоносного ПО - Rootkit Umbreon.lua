@@ -67,8 +67,6 @@ local indicators = {
 -- Универсальная функция: возвращает true/false если проходит регулярка/паттерн
 local function analyze (string, type)
     string = string:lower()
-    log("Current string: " ..string)
-    log("Type: " ..type)
     local comparation_type = "sub"
     local indicator_list = indicators[type]
     
@@ -76,9 +74,7 @@ local function analyze (string, type)
         comparation_type = "exact"
     end
 
-    log("Inicator: " ..tostring(indicator_list).. ", String: " ..string.. ", Comparation type: " ..comparation_type)
     local is_pattern = contains(indicator_list, string, comparation_type)
-    log("Is pattern: " ..tostring(is_pattern))
 
     if is_pattern then
         return true
@@ -130,10 +126,7 @@ function on_grouped(grouped)
     local log_exec = nil
 
     if unique_events > 1 then
-        log("Events counter: " ..#events)
-        log("Unique events: " ..unique_events)
         local event_type = events[1]:gets("observer.event.type")
-        log("Event type: " ..event_type)
 
         for _, event in ipairs(events) do
             local event_type = event:gets("observer.event.type")

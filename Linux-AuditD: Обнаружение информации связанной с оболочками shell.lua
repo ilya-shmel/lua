@@ -16,20 +16,20 @@ local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.even
 local aggregated_by = {"observer.event.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
-local shell_patterns =
-    "(?i)(?:^|\\\\|/|\\s+|\"|'|\\n)((?:cat|grep|head|tail|less|more|sed|awk|strings)\\s+.*/etc/shells|(?:getent|grep|cut)\\s+(shell|passwd)|chsh\\s+-l|ps\\s+-p\\s+\\$\\$)"
+local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\|\\n)"
+local shell_patterns = prefix.. "((?:cat|grep|head|tail|less|more|sed|awk|strings)\\s+[\\s\\S]*?/etc/shells|(?:getent|grep|cut)\\s+(shell|passwd)(?:$|\\s|\'|\"|\\)|chsh\\s+-l|ps\\s+-p\\s+\\$\\$)"
 
-local false_positive_patterns = {"run-parts.*cron\\.(hourly|daily|weekly|monthly)", "cd\\s+/\\s+&&\\s+run-parts",
-                                 "/etc/cron\\.", "systemd.*cron", "anacron", "/usr/lib/update-notifier",
-                                 "apt-get.*update", "dpkg.*configure", "yum.*update", "/usr/bin/unattended-upgrade"}
+local false_positive_patterns = {"run-parts[\\s\\S]*?cron\\.(hourly|daily|weekly|monthly)", "cd\\s+/\\s+&&\\s+run-parts",
+                                 "/etc/cron\\.", "systemd[\\s\\S]*?cron", "anacron", "/usr/lib/update-notifier",
+                                 "apt-get[\\s\\S]*?update", "dpkg[\\s\\S]*?configure", "yum[\\s\\S]*?update", "/usr/bin/unattended-upgrade"}
 
-local pattern_cat_shells = "(?i)(?:^|/|\"|'|\\s+)(cat)\\s+.*/etc/shells"
-local pattern_grep_shells = "(?i)(?:^|/|\"|'|\\s+)(grep)\\s+.*/etc/shells"
-local pattern_getent_shells = "(?i)(?:^|/|\"|'|\\s+)(getent)\\s+(?:shell|passwd)"
-local pattern_which_shell = "(?i)(?:^|/|\"|'|\\s+)(?:which|whereis)\\s+(?:bash|sh|zsh|ksh|tcsh)"
-local pattern_shell_env = "(?i)(?:^|/|\"|'|\\s+)(?:echo|printf).*\\$(?:shell|0)"
-local pattern_chsh = "(?i)(?:^|/|\"|'|\\s+)(chsh)\\s+-l"
-local pattern_ps_shell = "(?i)(?:^|/|\"|'|\\s+)(ps)\\s+-p\\s+\\$\\$"
+local pattern_cat_shells = prefix.. "(cat)\\s+[\\s\\S]*?/etc/shells"
+local pattern_grep_shells = prefix.. "(grep)\\s+[\\s\\S]*?/etc/shells"
+local pattern_getent_shells = prefix.. "(getent)\\s+(?:shell|passwd)"
+local pattern_which_shell = prefix.. "(?:which|whereis)\\s+(?:bash|sh|zsh|ksh|tcsh)"
+local pattern_shell_env = prefix.. "(?:echo|printf)[\\s\\S]*?\\$(?:shell|0)"
+local pattern_chsh = prefix.. "(chsh)\\s+-l"
+local pattern_ps_shell = prefix.. "(ps)\\s+-p\\s+\\$\\$"
 
 local function extract_operation_type(cmd)
     if cmd:search(pattern_cat_shells) then
@@ -56,6 +56,8 @@ local function is_false_positive(cmd, parent_path)
         if cmd:search(pattern) then
             return true
         end
+
+        return false
     end
 
     if parent_path then
@@ -85,8 +87,8 @@ function on_logline(logline)
         local command = logline:gets("initiator.command.executed")
         local parent_path = logline:gets("initiator.process.parent.path.full")
 
-        if command and command ~= "" and analyze(command) then
-            if not is_false_positive(command, parent_path) then
+        if analyze(command) then
+            if is_false_positive(command, parent_path) == false then
                 grouper1:feed(logline)
             end
         end
@@ -113,29 +115,27 @@ function on_grouped(grouped)
             local command = log_exec:gets("initiator.command.executed")
             local parent_path = log_sys:gets("initiator.process.parent.path.full")
 
-            if not is_false_positive(command, parent_path) then
-                alert({
-                    template = template,
-                    meta = {
-                        user_name = log_sys:gets("initiator.user.name", "Не определен"),
-                        command = command,
-                        command_path = log_sys:gets("initiator.process.path.full", "Не определен"),
-                        operation_type = extract_operation_type(command)
-                    },
-                    risk_level = 4.5,
-                    asset_ip = log_exec:get_asset_data("observer.host.ip"),
-                    asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
-                    asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
-                    asset_mac = "",
-                    create_incident = true,
-                    incident_group = "",
-                    assign_to_customer = false,
-                    incident_identifier = "",
-                    logs = grouped.aggregatedData.loglines,
-                    mitre = {"T1082", "T1518"},
-                    trim_logs = 10
-                })
-            end
+            alert({
+                template = template,
+                meta = {
+                    user_name = log_sys:gets("initiator.user.name", "Не определен"),
+                    command = command,
+                    command_path = log_sys:gets("initiator.process.path.full", "Не определен"),
+                    operation_type = extract_operation_type(command)
+                },
+                risk_level = 4.5,
+                asset_ip = log_exec:get_asset_data("observer.host.ip"),
+                asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
+                asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
+                asset_mac = "",
+                create_incident = true,
+                incident_group = "",
+                assign_to_customer = false,
+                incident_identifier = "",
+                logs = grouped.aggregatedData.loglines,
+                mitre = {"T1082", "T1518"},
+                trim_logs = 10
+            })
             grouper1:clear()
         end
     end

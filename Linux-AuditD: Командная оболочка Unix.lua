@@ -1,5 +1,3 @@
-whitelist = storage.new("trusted_users|Linux-AuditD: Командная оболочка Unix")
-
 -- Шаблоны алерта
 local template = [[
 	Обнаружена аномальная активность Unix Shell.
@@ -78,49 +76,44 @@ function on_grouped(grouped)
         end
 
 -- Проверяем, что в группере находятся как события EXECVE, так и SYSCALL        
-            if log_sys and log_exec then
-                local initiator_name = log_sys:gets("initiator.user.name")
-
-                if whitelist:get(initiator_name, "username") == nil then                
-                
-                local host_ip = log_exec:gets("observer.host.ip")
-                local host_fqdn = log_exec:gets("observer.host.fqdn")
-                local path_name = log_sys:gets("initiator.process.path.full")
+        if log_sys and log_exec then
+            local initiator_name = log_sys:gets("initiator.user.name")
+            local host_ip = log_exec:gets("observer.host.ip")
+            local host_fqdn = log_exec:gets("observer.host.fqdn")
+            local path_name = log_sys:gets("initiator.process.path.full")
                 
 -- Объединить все зафиксированные команды в одну строку и обрезать её для наглядного вывода в карточке инцидента                
-                local current_command = log_exec:gets("initiator.command.executed")
-                
-                if #current_command > 128 then
-                    current_command = current_command:sub(1,128).. "... "
-                end 
+            local current_command = log_exec:gets("initiator.command.executed")
+            
+            if #current_command > 128 then
+                current_command = current_command:sub(1,128).. "... "
+            end 
               
 -- Функция алерта
-                alert({
-                    template = template,
-                    meta = {
-                        user_name=initiator_name,
-                        command_path=path_name,
-                        command=current_command
-                    },
-                    risk_level = 7.0, 
-                    asset_ip = host_ip,
-                    asset_hostname = host_name,
-                    asset_fqdn = host_fqdn,
-                    asset_mac = "",
-                    create_incident = true,
-                    incident_group = "",
-                    assign_to_customer = false,
-                    incident_identifier = "",
-                    command=command_executed,
-                    logs = events,
-                    mitre = {"T1059.004", "T1059", "T1027"},
-                    trim_logs = 12
-                    }
-                )
-                grouper1:clear()      
-            end
-
-        end        
+            alert({
+                template = template,
+                meta = {
+                    user_name=initiator_name,
+                    command_path=path_name,
+                    command=current_command
+                },
+                risk_level = 7.0, 
+                asset_ip = host_ip,
+                asset_hostname = host_name,
+                asset_fqdn = host_fqdn,
+                asset_mac = "",
+                create_incident = true,
+                incident_group = "",
+                assign_to_customer = false,
+                incident_identifier = "",
+                command=command_executed,
+                logs = events,
+                mitre = {"T1059.004", "T1059", "T1027"},
+                trim_logs = 12
+                }
+            )
+            grouper1:clear()      
+        end
     end
 end
 
