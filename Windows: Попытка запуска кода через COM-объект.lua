@@ -164,15 +164,3 @@ function on_grouped(grouped)
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
-
-
-- wmic process call
-- cscript
-- wscript
-- regsvr32.exe
-- rundll32.exe
-- Set-COMProperty
-- Invoke-COMMethod
-- Get-COMProperty
-- reg add
-- mmc.exe

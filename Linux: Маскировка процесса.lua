@@ -1,5 +1,5 @@
 local template = [[
-Маскировка процесса через vfork syscall.
+Подозрение на маскировку процесса через SYSCALL vfork.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{.Meta.observer_ip}}
@@ -27,42 +27,27 @@ local suspicious_patterns = {
                                 "[-\\w\\/]+\\s+&\\s+(?:ps|lsof|ss|\\w+?top|pgrep|fuser|systemctl|uhide(-tcp))",
                                 "(ba)?sh\\s+-c\\s+(?:\\./[a-zA-Z0-9]{6,}|[a-zA-Z0-9/]{1,}\\s+\\||\\$\\{.*\\})",
                                 "\\./[a-zA-Z0-9]{8,}",
-                                "\\$\\(.*\\)", "exec\\s+",
+                                "\\$\\([\\s\\S]*?\\)",
+                                "exec\\s+",
                                 ">\\s*/dev/null"
 }
 
-local legitimate_patterns = {"ansible", "puppet", "chef", "salt", "docker", "kubernetes", "systemd", "cron", "scripts"}
-
-local function match_pattern(text, patterns)
-    local text_lower = text:lower()
-    for _, pattern in ipairs(patterns) do
-        if text_lower:search(pattern) then
+local function analyze(cmd)
+    local cmd_lower = cmd:lower()
+    for _, pattern in ipairs(suspicious_patterns) do
+        if cmd_lower:search(pattern) then
             return true
         end
     end
     return false
 end
 
-local function is_legitimate(cmd)
-    return match_pattern(cmd, legitimate_patterns)
-end
-
-local function analyze(cmd)
-    if is_legitimate(cmd) then
-        return false
-    end
-
-    return match_pattern(cmd, suspicious_patterns)
-end
-
 function on_logline(logline)
     local event_type = logline:gets("observer.event.type")
 
     if event_type == "SYSCALL" then
-        log("Sending Syscall to grouper!")
         grouper1:feed(logline)
     elseif event_type == "EXECVE" then
-        log("Sending Esecve to grouper!")
         local cmd = logline:gets("initiator.command.executed")
         if analyze(cmd) then
             grouper1:feed(logline)
@@ -80,15 +65,7 @@ function on_grouped(grouped)
     local syscall_count = 0
 
     if unique_events > 1 then
-        local type1 = events[1]:gets("observer.event.type")
-        local type2 = events[2]:gets("observer.event.type")
-        local syscall_name1 = events[1]:gets("target.syscall.name", "Not SYSCALL")
-        local syscall_name2 = events[2]:gets("target.syscall.name", "Not SYSCALL")
 
-        log("Events: " ..#events.. ". Unique events: " ..unique_events)
-        log("Type 1: " ..type1.. ". Type 2: " ..type2)
-        log("Syscall name1: " ..syscall_name1.. ". Syscall name2: " ..syscall_name2)
-        
         for _, log in ipairs(events) do
             local event_type = log:gets("observer.event.type")
                         
