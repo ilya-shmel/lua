@@ -166,7 +166,7 @@ function on_grouped(grouped)
                 host_ip=host_ip,
                 hostname=host_name
                 },
-            risk_level = 7.0, 
+            risk_level = 8.0, 
             asset_ip = host_ip,
             asset_hostname = host_name,
             asset_fqdn = host_fqdn,
