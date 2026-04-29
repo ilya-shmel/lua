@@ -109,7 +109,6 @@ end
 -- Стандартная функция анализа строки
 local function analyze(string, type)
     local string = string:lower()
-    --log("String: " ..string.. ", Type:" ..type)
     
     if type == "command" then
         for _, pattern in pairs(command_patterns) do
@@ -121,20 +120,14 @@ local function analyze(string, type)
         end
     elseif type == "old_value" then
         local is_empty = contains(old_value_patterns, string)
-        log("----------------------")
-        log("Old value: " ..string)
-        log("Is empty: " ..tostring(is_empty))
-        log("----------------------")   
+ 
         if is_empty then
             return true
         end
     elseif type == "new_value" then
         local is_prefix = contains(new_value_prefixes, string, "prefix") 
         local is_suffix = string:search(new_value_suffix)
-        log("----------------------")
-        log("New value: " ..string)
-        log("Is prefix: " ..tostring(is_prefix).. ", Is suffix: " ..tostring(is_suffix))
-        log("----------------------")
+
         if is_suffix and is_prefix then 
             return true
         end
@@ -147,16 +140,12 @@ end
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
 
---    log("Event ID: " ..event_id)
-
     if event_id == 4657 then
         local changes_new_value = logline:gets("target.config.changes.new_value")
         local changes_old_value = logline:gets("target.config.changes.old_value")
         local is_empty_old = analyze(changes_old_value, "old_value")
         local is_empty_new = analyze(changes_new_value, "new_value")
        
---        log("Old value: " ..tostring(is_empty_old).. ", New value: " ..tostring(is_empty_new))
-
         if is_empty_new and is_empty_old then
             set_field_value(logline, "event.type", "registry_event")
             grouper1:feed(logline)
@@ -178,8 +167,6 @@ function on_grouped(grouped)
     local command_events = {}
     local registry_events = {}
 
-    log("Events: " ..#events)
-
     for _, event in ipairs(events) do
         local event_type = event:gets("event.type")
         
@@ -193,7 +180,7 @@ function on_grouped(grouped)
     
     if #command_events > 0 then
         alert_function(template1, "command_meta", command_events)
-        grouper:clear() 
+        grouper1:clear() 
     elseif #registry_events > 0 then
         alert_function(template2, "registry_meta", registry_events)
         grouper1:clear()
