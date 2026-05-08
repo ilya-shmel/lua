@@ -23,16 +23,15 @@ local grouped_time_field = "@timestamp,RFC3339"
 local http_ports = {"80","8080"}
 local vnc_ports = {"5900", "5901", "5902", "5903", "5904"}
 local socket_ports = {
-    "FTP" = "21",
-    "Telnet" = "23",
-    "MSSQL" = "1433",
-    "Oracle" = "1521",
-    "MySQL" = "3306",
-    "Memcached" = "11211",
-    "RabbitMQ" = "15672",
-    "MongoDB" = "27017"
+    ["FTP"] = "21",
+    ["Telnet"] = "23",
+    ["MSSQL"] = "1433",
+    ["Oracle"] = "1521",
+    ["MySQL"] = "3306",
+    ["Memcached"] = "11211",
+    ["RabbitMQ"] = "15672",
+    ["MongoDB"] = "27017"
 }
-
 
 -- Функция работы с логлайном
 function on_logline(logline)
@@ -42,14 +41,16 @@ function on_logline(logline)
     local is_local_initiator = local_networks:search(initiator_ip, "ip")
     local is_local_target = local_networks:search(target_ip, "ip")
     local tartet_protocol = ""
-
+    
+    
+    
     if is_local_initiator and ((is_local_target and compare(target_port, "exact", "80")) or (not is_local_target and contains(socket_ports, tostring(target_port)))) then
         set_field_value(logline, "target.socket.protocol", "HTTP")
         grouper1:feed(logline)
     elseif is_local_initiator and contains(vnc_ports, tostring(target_port)) then
         set_field_value(logline, "target.socket.protocol", "VNC")
         grouper1:feed(logline)
-    elseif is_local_initiator 
+    elseif is_local_initiator then
         for protocol, port in ipairs(socket_ports) do 
             if compare(target_port, "exact", port) then
                 target_protocol = protocol
