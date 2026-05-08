@@ -1,4 +1,4 @@
-local_networks = storage.new("local_networks|Использование протокола без шифрования")
+local_networks = storage.new("local_networks|Использование протокола без шифрования2")
 
 -- Шаблон алерта
 local template = [[
@@ -16,7 +16,7 @@ IP-адрес: {{ .Meta.target_ip }}
 
 -- Параметры группера
 local detection_window = "1m"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "target.socket.protocol"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "event.application.protocol"}
 local aggregated_by = {"target.socket.port"}
 local grouped_time_field = "@timestamp,RFC3339"
 
@@ -32,33 +32,35 @@ local socket_ports = {
     ["RabbitMQ"] = "15672",
     ["MongoDB"] = "27017"
 }
+local masks = {"24", "16", "12"}
 
 -- Функция работы с логлайном
 function on_logline(logline)
     local initiator_ip = logline:gets("initiator.host.ip")
     local target_ip = logline:gets("target.host.ip")
     local target_port = logline:gets("target.socket.port")
-    local is_local_initiator = local_networks:search(initiator_ip, "ip")
-    local is_local_target = local_networks:search(target_ip, "ip")
+    local is_local_initiator = nil
+    local is_local_target = nil
     local tartet_protocol = ""
-    
-    
-    
-    if is_local_initiator and ((is_local_target and compare(target_port, "exact", "80")) or (not is_local_target and contains(socket_ports, tostring(target_port)))) then
-        set_field_value(logline, "target.socket.protocol", "HTTP")
-        grouper1:feed(logline)
-    elseif is_local_initiator and contains(vnc_ports, tostring(target_port)) then
-        set_field_value(logline, "target.socket.protocol", "VNC")
-        grouper1:feed(logline)
-    elseif is_local_initiator then
-        for protocol, port in ipairs(socket_ports) do 
-            if compare(target_port, "exact", port) then
-                target_protocol = protocol
-                set_field_value(logline, "target.socket.protocol", target_protocol)
-                grouper1:feed(logline)
+
+    is_local_initiator = local_networks:get(tostring(initiator_ip), "cidr")
+    is_local_target = local_networks:get(tostring(target_ip), "cidr")
+
+    if is_local_initiator then 
+        if is_local_target and compare(target_port, "==", "80") or (not is_local_target and contains(socket_ports, "exact", tostring(target_port))) then
+            grouper1:feed(logline)
+        elseif contains(vnc_ports, tostring(target_port)) then
+            grouper1:feed(logline)
+        else 
+            for protocol, port in ipairs(socket_ports) do 
+                if compare(target_port, "exact", port) then
+                    grouper1:feed(logline)
+                end
             end
         end
     end
+    
+
 end
 
 -- Функция сработки группера
@@ -70,19 +72,19 @@ function on_grouped(grouped)
         local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip")
         local host_name = first_event:gets("observer.host.hostname", "Имя узла не определено")
         local host_fqdn = first_event:gets("observer.host.fqdn")
-        local initiator_ip = logline:gets("initiator.host.ip")
-        local target_host_ip = logline:gets("target.host.ip")
-        local target_socket_port = logline:gets("target.socket.port")
-        local target_protocol = logline:gets("target.socket.protocol")
+        local initiator_ip = first_event:gets("initiator.host.ip")
+        local target_host_ip = first_event:gets("target.host.ip")
+        local target_socket_port = first_event:gets("target.socket.port")
+        local target_protocol = first_event:gets("event.application.protocol")
 
          alert({
             template = template,
             meta = {
-                initiator_ip_ip=initiator_ip,
+                initiator_ip=initiator_ip,
                 hostname=host_name,
                 target_ip=target_host_ip,
                 port=target_socket_port,
-                protocol=tartet_protocol
+                protocol=target_protocol
                 },
             risk_level = 4.0, 
             asset_ip = host_ip,
