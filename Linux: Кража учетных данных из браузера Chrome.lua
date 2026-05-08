@@ -37,53 +37,18 @@ local aggregated_by = {"observer.event.type"}
 
 -- Команды извлечения данных
 local extraction_commands = {
-    "sqlite3",
-    "cat",
-    "cp",
-    "mv",
-    "dd",
-    "tar",
-    "zip",
-    "7z",
-    "strings",
-    "grep"
+    ["SQL-запрос к базе данных браузера"] = "sqlite3",
+    ["Копирование/перемещение файлов браузера"] = "cat",
+    ["Чтение файлов браузера"] = "cp",
+    ["Доступ к данным браузера"]= "mv",
+    ["Доступ к данным браузера"]= "dd",
+    ["Архивирование данных браузера"]= "tar",
+    ["Архивирование данных браузера"]= "zip",
+    ["Архивирование данных браузера"]= "7z",
+    ["Доступ к данным браузера"]= "strings",
+    ["Извлечение строк из бинарных файлов"]= "grep"
 }
 
-
--- Легитимные процессы (исключения)
-local legitimate_processes = {
-    "chrome", "chromium", "brave", "microsoft-edge", "opera",
-    "google-chrome-stable",
-    "apt", "dpkg", "yum", "dnf",
-    "backup", "rsync", "duplicity",
-    "ansible", "puppet", "chef",
-    "chrome-sandbox",
-    "update-notifier"
-}
-
--- Функция проверки легитимности
-local function is_legitimate_operation(command)
-    local cmd_lower = string.lower(command)
-    
-    -- Проверяем легитимные процессы
-    for _, process in ipairs(legitimate_processes) do
-        if cmd_lower:search("(?:^|\\/|\\\\|\\s+|\'|\")" .. process .. "\\s+") then
-            return true
-        end
-    end
-    
-    -- Исключаем системные update операции
-    if cmd_lower:search("(?:^|\\/|\\\\|\\s+|\'|\")(?:apt%-get|update%-manager)\\s+") then
-        return true
-    end
-    
-    -- Исключаем backup в специальные директории
-    if cmd_lower:search("(?:(\\/var\\/)?\\/backup\\/)") then
-        return true
-    end
-    
-    return false
-end
 
 -- Функция определения типа операции
 local function detect_operation_type(command)
@@ -159,10 +124,6 @@ end
 
 -- Функция оценки уровня риска
 local function assess_risk_level(command)
-    if not command then
-        return "НИЗКИЙ", 5.0
-    end
-    
     local cmd_lower = string.lower(command)
     local score = 5.0
     local reasons = {}
@@ -207,12 +168,14 @@ end
 -- Основная функция анализа
 local function analyze(command)
     local cmd_lower = string.lower(command)
+    local operation_type = nil
     
     -- Проверяем наличие команды извлечения
     local has_extraction_cmd = false
-    for _, cmd in ipairs(extraction_commands) do
+    for operation, cmd in pairs(extraction_commands) do
         if cmd_lower:search("(?:^|\\/|\\\\|\\s+|\'|\")" .. cmd .. "\\s+") then
             has_extraction_cmd = true
+            operation_type = operation
             break
         end
     end
@@ -234,16 +197,17 @@ local function analyze(command)
     end
     
     -- Срабатываем если: (команда извлечения) И (путь Chrome ИЛИ критический файл)
-    return has_extraction_cmd and (has_chrome_path or has_critical_file)
+    return has_extraction_cmd and (has_chrome_path or has_critical_file), operation_type
 end
 
 function on_logline(logline)
     local event_type = logline:gets("observer.event.type")
+    local operation_type = nil
     
     if event_type == "EXECVE" or event_type == "PROCTITLE" then
         local command = logline:gets("initiator.command.executed")
-        local result = analyze(command)
-        if result and not is_legitimate_operation(command) then
+        local result, operation_type  = analyze(command)
+        if result then
             grouper1:feed(logline)
         end
         
@@ -254,10 +218,13 @@ end
 
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
     local log_sys = nil
     local log_exec = nil
     local event_type_found = "Unknown"
     
+    log(#events)
+    log(events[1]:get("observer.event.type"))
     -- Разделяем события
     for _, event in ipairs(events) do
         local type = event:gets("observer.event.type")
@@ -273,12 +240,12 @@ function on_grouped(grouped)
     if log_sys and log_exec then
         local command = log_exec:gets("initiator.command.executed")
         
-        if command and analyze(command) and not is_legitimate_operation(command) then
+        if command and analyze(command) then
             local operation_type = detect_operation_type(command)
             local target_resource = detect_target_resource(command)
             local extraction_method = detect_extraction_method(command)
             local risk_level_text, risk_score, reasons = assess_risk_level(command)
-            
+                        
             local threat_description = string.format(
                 "Операция: %s\nЦелевой ресурс: %s\nМетод: %s\nПризнаки угрозы:\n  %s\nВозможная цель: Кража учетных данных для lateral movement/persistence\nMITRE ATT&CK: T1555.003 (Credentials from Web Browsers)",
                 operation_type,
@@ -290,15 +257,16 @@ function on_grouped(grouped)
             alert({
                 template = template,
                 meta = {
-                    user_name = log_sys:gets("initiator.user.name") or "Не определен",
+                    user_name = log_sys:gets("initiator.user.name", "Не определен"),
                     command = command,
-                    process_path = log_sys:gets("initiator.process.path.full") or "Не определен",
+                    process_path = log_sys:gets("initiator.process.path.full", "Не определен"),
                     operation_type = operation_type,
                     target_resource = target_resource,
                     extraction_method = extraction_method,
                     risk_level = risk_level_text,
                     event_type = event_type_found,
-                    threat_description = threat_description
+                    threat_description = threat_description,
+                    timestamp = log_sys:gets("@timestamp")
                 },
                 risk_level = risk_score,
                 asset_ip = log_exec:get_asset_data("observer.host.ip"),
