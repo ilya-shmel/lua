@@ -50,28 +50,6 @@ local extraction_commands = {
 }
 
 
--- Функция определения типа операции
-local function detect_operation_type(command)
-    local cmd_lower = string.lower(command)
-    
-    local comm_name = string.match(cmd_lower, "[^%s+/]%S+")
-    if comm_name == "sqlite3" then
-        return "SQL-запрос к базе данных браузера"
-    elseif comm_name == "cp" or comm_name == "mv" then
-        return "Копирование/перемещение файлов браузера"
-    elseif comm_name == "cat" then
-        return "Чтение файлов браузера"
-    elseif comm_name == "tar" or comm_name == "zip" or comm_name == "7z" then
-        return "Архивирование данных браузера"
-    elseif comm_name == "strings" then
-        return "Извлечение строк из бинарных файлов"
-    elseif comm_name == "grep" then
-        return "Поиск в файлах браузера"
-    else
-        return "Доступ к данным браузера"
-    end
-end
-
 -- Функция определения целевого ресурса
 local function detect_target_resource(command)
     local cmd_lower = string.lower(command)
@@ -207,7 +185,9 @@ function on_logline(logline)
     if event_type == "EXECVE" or event_type == "PROCTITLE" then
         local command = logline:gets("initiator.command.executed")
         local result, operation_type  = analyze(command)
+        
         if result then
+            set_field_value(logline, "operation.type", operation_type)
             grouper1:feed(logline)
         end
         
@@ -223,66 +203,66 @@ function on_grouped(grouped)
     local log_exec = nil
     local event_type_found = "Unknown"
     
-    log(#events)
-    log(events[1]:get("observer.event.type"))
-    -- Разделяем события
-    for _, event in ipairs(events) do
-        local type = event:gets("observer.event.type")
-        if type == "SYSCALL" then
-            log_sys = event
-        elseif type == "EXECVE" or type == "PROCTITLE" then
-            log_exec = event
-            event_type_found = type
+    if unique_events > 1 then
+        -- Разделяем события
+        for _, event in ipairs(events) do
+            local type = event:gets("observer.event.type")
+            if type == "SYSCALL" then
+                log_sys = event
+            elseif type == "EXECVE" or type == "PROCTITLE" then
+                log_exec = event
+                event_type_found = type
+            end
         end
-    end
-    
-    -- Проверяем наличие обоих типов
-    if log_sys and log_exec then
-        local command = log_exec:gets("initiator.command.executed")
-        
-        if command and analyze(command) then
-            local operation_type = detect_operation_type(command)
-            local target_resource = detect_target_resource(command)
-            local extraction_method = detect_extraction_method(command)
-            local risk_level_text, risk_score, reasons = assess_risk_level(command)
-                        
-            local threat_description = string.format(
-                "Операция: %s\nЦелевой ресурс: %s\nМетод: %s\nПризнаки угрозы:\n  %s\nВозможная цель: Кража учетных данных для lateral movement/persistence\nMITRE ATT&CK: T1555.003 (Credentials from Web Browsers)",
-                operation_type,
-                target_resource,
-                extraction_method,
-                table.concat(reasons, "\n  ")
-            )
-            
-            alert({
-                template = template,
-                meta = {
-                    user_name = log_sys:gets("initiator.user.name", "Не определен"),
-                    command = command,
-                    process_path = log_sys:gets("initiator.process.path.full", "Не определен"),
-                    operation_type = operation_type,
-                    target_resource = target_resource,
-                    extraction_method = extraction_method,
-                    risk_level = risk_level_text,
-                    event_type = event_type_found,
-                    threat_description = threat_description,
-                    timestamp = log_sys:gets("@timestamp")
-                },
-                risk_level = risk_score,
-                asset_ip = log_exec:get_asset_data("observer.host.ip"),
-                asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
-                asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
-                asset_mac = "",
-                create_incident = create_incident,
-                incident_group = "",
-                assign_to_customer = assign_to_customer,
-                incident_identifier = "",
-                logs = grouped.aggregatedData.loglines,
-                mitre = {"T1555", "T1555.003", "T1005"},
-                trim_logs = 10
-            })
-            
-            grouper1:clear()
+
+        -- Проверяем наличие обоих типов
+        if log_sys and log_exec then
+            local command = log_exec:gets("initiator.command.executed")
+
+            if command and analyze(command) then
+                local operation_type = log_sys:get("operation.type") or log_exec:get("operation.type")
+                local target_resource = detect_target_resource(command)
+                local extraction_method = detect_extraction_method(command)
+                local risk_level_text, risk_score, reasons = assess_risk_level(command)
+
+                local threat_description = string.format(
+                    "Операция: %s\nЦелевой ресурс: %s\nМетод: %s\nПризнаки угрозы:\n  %s\nВозможная цель: Кража учетных данных для lateral movement/persistence\nMITRE ATT&CK: T1555.003 (Credentials from Web Browsers)",
+                    operation_type,
+                    target_resource,
+                    extraction_method,
+                    table.concat(reasons, "\n  ")
+                )
+
+                alert({
+                    template = template,
+                    meta = {
+                        user_name = log_sys:gets("initiator.user.name", "Не определен"),
+                        command = command,
+                        process_path = log_sys:gets("initiator.process.path.full", "Не определен"),
+                        operation_type = operation_type,
+                        target_resource = target_resource,
+                        extraction_method = extraction_method,
+                        risk_level = risk_level_text,
+                        event_type = event_type_found,
+                        threat_description = threat_description,
+                        timestamp = log_sys:gets("@timestamp")
+                    },
+                    risk_level = risk_score,
+                    asset_ip = log_exec:get_asset_data("observer.host.ip"),
+                    asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
+                    asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
+                    asset_mac = "",
+                    create_incident = create_incident,
+                    incident_group = "",
+                    assign_to_customer = assign_to_customer,
+                    incident_identifier = "",
+                    logs = grouped.aggregatedData.loglines,
+                    mitre = {"T1555", "T1555.003", "T1005"},
+                    trim_logs = 10
+                })
+
+                grouper1:clear()
+            end
         end
     end
 end
