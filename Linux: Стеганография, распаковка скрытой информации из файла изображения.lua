@@ -1,22 +1,18 @@
 local template = [[
-Обнаружено использование инструментов стеганографии для извлечения скрытой информации.
-
+Подозрение на использование инструментов стеганографии для извлечения скрытой информации.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{.Meta.observer_ip}}
 Хост: {{.Meta.observer_hostname}}
 FQDN: {{.Meta.observer_fqdn}}
 
-
 ИНИЦИАТОР:
 Пользователь: {{.Meta.user_name}}
 UID: {{.Meta.user_id}}
 Процесс: {{.Meta.command_path}}
 
-
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{.Meta.command}}
-
 
 ТИП ОПЕРАЦИИ:
 {{.Meta.operation_type}}
@@ -29,117 +25,117 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 local steganography_tools = {
     STEGHIDE_EXTRACT = {
-        pattern = "(?i)steghide\\s+(?:extract|info)",
+        pattern = "steghide\\s+(?:extract|info)",
         risk = 8.0,
         mitre = {"T1001.002", "T1027.003", "T1140"}
     },
     OUTGUESS_EXTRACT = {
-        pattern = "(?i)outguess\\s+(?:-r|-e)",
+        pattern = "outguess\\s+(?:-r|-e)",
         risk = 8.0,
         mitre = {"T1001.002", "T1027.003", "T1140"}
     },
     ZSTEG_EXTRACT = {
-        pattern = "(?i)zsteg",
+        pattern = "zsteg",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     STEGCRACKER = {
-        pattern = "(?i)stegcracker",
+        pattern = "stegcracker",
         risk = 8.5,
         mitre = {"T1001.002", "T1027.003", "T1110"}
     },
     STEGSEEK = {
-        pattern = "(?i)stegseek",
+        pattern = "stegseek",
         risk = 8.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     EXIFTOOL_SUSPICIOUS = {
-        pattern = "(?i)exiftool\\s+.*\\.(?:jpg|jpeg|png|bmp|gif|tiff|webp)",
+        pattern = "exiftool\\s+.*\\.(?:jpe?g|png|bmp|gif|tiff|webp)",
         risk = 6.0,
         mitre = {"T1001.002", "T1083"}
     },
     BINWALK_EXTRACT = {
-        pattern = "(?i)binwalk\\s+(?:-e|--extract).*\\.(?:jpg|jpeg|png|bmp|gif)",
+        pattern = "binwalk\\s+(?:-e|--extract).*\\.(?:jpe?g|png|bmp|gif)",
         risk = 7.5,
         mitre = {"T1001.002", "T1140"}
     },
     FOREMOST_EXTRACT = {
-        pattern = "(?i)foremost\\s+.*\\.(?:jpg|jpeg|png|bmp|gif)",
+        pattern = "foremost\\s+.*\\.(?:jpe?g|png|bmp|gif)",
         risk = 7.5,
         mitre = {"T1001.002", "T1140"}
     },
     UNZIP_FROM_IMAGE = {
-        pattern = "(?i)unzip\\s+.*\\.(?:jpg|jpeg|png|bmp|gif)",
+        pattern = "unzip\\s+.*\\.(?:jpe?g|png|bmp|gif)",
         risk = 7.0,
         mitre = {"T1001.002", "T1140"}
     },
     STRINGS_IMAGE = {
-        pattern = "(?i)strings\\s+.*\\.(?:jpg|jpeg|png|bmp|gif)",
+        pattern = "strings\\s+.*\\.(?:jpe?g|png|bmp|gif)",
         risk = 6.5,
         mitre = {"T1001.002", "T1083"}
     },
     STEGDETECT = {
-        pattern = "(?i)stegdetect",
+        pattern = "stegdetect",
         risk = 7.0,
         mitre = {"T1001.002", "T1083"}
     },
     STEGBREAK = {
-        pattern = "(?i)stegbreak",
+        pattern = "stegbreak",
         risk = 8.0,
         mitre = {"T1001.002", "T1110"}
     },
     OPENSTEGO = {
-        pattern = "(?i)openstego",
+        pattern = "openstego",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     SNOW = {
-        pattern = "(?i)snow\\s+(?:-C|-S)",
+        pattern = "snow\\s+(?:-c|-s)",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     F5 = {
-        pattern = "(?i)f5\\s+(?:-x|-extract)",
+        pattern = "f5\\s+(?:-x|-extract)",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     JPHIDE = {
-        pattern = "(?i)jphide\\s+(?:-x)",
+        pattern = "jphide\\s+(?:-x)",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     JPSEEK = {
-        pattern = "(?i)jpseek",
+        pattern = "jpseek",
         risk = 7.5,
         mitre = {"T1001.002", "T1083"}
     },
     LSB_TOOLS = {
-        pattern = "(?i)(?:lsb-toolkit|stegpy|stepic)",
+        pattern = "(?:lsb-toolkit|stegpy|stepic)",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     DEEPSOUND = {
-        pattern = "(?i)deepsound",
+        pattern = "deepsound",
         risk = 7.5,
         mitre = {"T1001.002", "T1027.003"}
     },
     SPECTROLOGY = {
-        pattern = "(?i)sonic-visualiser|audacity.*spectrogram",
+        pattern = "sonic-visualiser|audacity[\\s\\S]*spectrogram",
         risk = 7.0,
         mitre = {"T1001.002", "T1083"}
     },
     FIND_IMAGES = {
-        pattern = "(?i)find\\s+.*\\s+(?:-name|--name)\\s+.*\\.(?:jpg|jpeg|png|bmp|gif)",
+        pattern = "find\\s+[\\s\\S]*\\s+(?:-name|--name)\\s+[\\s\\S]*\\.(?:jpe?g|png|bmp|gif)",
         risk = 6.0,
         mitre = {"T1083", "T1005"}
     },
     COPY_IMAGES = {
-        pattern = "(?i)(?:cp|mv|scp|rsync)\\s+.*\\.(?:jpg|jpeg|png|bmp|gif)\\s+(?:/tmp|/var/tmp|/dev/shm)",
+        pattern = "(?:cp|mv|scp|rsync)\\s+[\\s\\S]*\\.(?:jpe?g|png|bmp|gif)\\s+(?:/tmp|/var/tmp|/dev/shm)",
         risk = 6.5,
         mitre = {"T1074.001"}
     },
     PASSWORD_EXTRACT = {
-        pattern = "(?i)(?:steghide|outguess|stegcracker)\\s+.*(?:-p\\s+|-passphrase\\s+|--password\\s+)",
+        pattern = "(?:steghide|outguess|stegcracker)\\s+.*(?:-p\\s+|-passphrase\\s+|--password\\s+)",
         risk = 8.5,
         mitre = {"T1001.002", "T1110"}
     }
@@ -171,8 +167,8 @@ local operation_types = {
     PASSWORD_EXTRACT = "Извлечение с паролем"
 }
 
-local false_positive_patterns = {"(?i)--help|--version|-h|-v", "(?i)man\\s+(?:steghide|outguess|exiftool|binwalk)",
-                                 "(?i)apt-get|dpkg|yum|dnf", "(?i)test|example|sample|demo"}
+local false_positive_patterns = {"(?:--help|--version|-h|-v)", "man\\s+(?:steghide|outguess|exiftool|binwalk)",
+                                 "(?:apt-get|dpkg|yum|dnf)", "(?:test|example|sample|demo)"}
 
 local function is_false_positive(cmd)
     for _, pattern in ipairs(false_positive_patterns) do
@@ -200,13 +196,16 @@ end
 function on_logline(logline)
     local event_type = logline:gets("observer.event.type")
 
-    if event_type == "EXECVE" or event_type == "PROCTITLE" then
+    if event_type == "EXECVE" then
         local command = logline:gets("initiator.command.executed")
-        if command and command ~= "" then
-            local threat_type, _, _, _ = analyze_threat(command)
-            if threat_type then
-                grouper1:feed(logline)
-            end
+        local threat_type, risk, operation_type, mitre = analyze_threat(command)
+        set_field_value(logline, "threat.type", threat_type)
+        set_field_value(logline, "risk", risk)
+        set_field_value(logline, "operation.type", operation_type)
+        set_field_value(logline, "mitre", mitre)
+        
+        if threat_type then
+            grouper1:feed(logline)
         end
     elseif event_type == "SYSCALL" then
         grouper1:feed(logline)
@@ -214,63 +213,59 @@ function on_logline(logline)
 end
 
 function on_grouped(grouped)
-    if grouped.aggregatedData.unique.total < 2 then
-        return
-    end
-
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
     local log_exec = nil
     local log_sys = nil
-
-    for _, event in ipairs(grouped.aggregatedData.loglines) do
-        local ev_type = event:gets("observer.event.type")
-        if ev_type == "SYSCALL" then
-            log_sys = event
-        elseif ev_type == "EXECVE" or ev_type == "PROCTITLE" then
-            log_exec = event
+    
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            local ev_type = event:gets("observer.event.type")
+            if ev_type == "SYSCALL" then
+                log_sys = event
+            elseif ev_type == "EXECVE" then
+                log_exec = event
+            end
         end
+
+        if log_sys and log_exec then
+            local mitre = log_exec:gets("mitre")
+            local risk = log_exec:gets("risk")
+            local operation_type = log_exec:gets("operation.type")
+            local command = log_exec:gets("initiator.command.executed")
+
+            if #command > 128 then
+                command = command:sub(1,128).. "... "
+            end
+
+            alert({
+                template = template,
+                meta = {
+                    observer_ip = log_exec:gets("observer.host.ip", "IP-адрес неопределён"),
+                    observer_hostname = log_exec:gets("observer.host.hostname", "Имя узла неопределёно"),
+                    observer_fqdn = log_exec:gets("observer.host.fqdn"),
+                    user_name = log_sys:gets("initiator.user.name", "Пользователь неопределён"),
+                    user_id = log_sys:gets("initiator.user.id", "Идентификатор пользователя неопределён"),
+                    command_path = log_sys:gets("initiator.process.path.full", "Путь исполнения команды неопределён"),
+                    command = command,
+                    operation_type = operation_type
+                },
+                risk_level = risk,
+                asset_ip = log_exec:get_asset_data("observer.host.ip"),
+                asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
+                asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
+                asset_mac = "",
+                create_incident = true,
+                incident_group = "Data Exfiltration",
+                assign_to_customer = false,
+                incident_identifier = "",
+                logs = events,
+                mitre = mitre or {"T1001"},
+                trim_logs = 10
+            })
+            grouper1:clear()
+        end    
     end
-
-    if not log_exec or not log_sys then
-        return
-    end
-
-    local command = log_exec:gets("initiator.command.executed")
-    if not command or command == "" then
-        return
-    end
-
-    local threat_type, risk, operation_type, mitre = analyze_threat(command)
-    if not threat_type then
-        return
-    end
-
-    alert({
-        template = template,
-        meta = {
-            observer_ip = log_exec:gets("observer.host.ip") or "unknown",
-            observer_hostname = log_exec:gets("observer.host.hostname") or "unknown",
-            observer_fqdn = log_exec:gets("observer.host.fqdn") or "unknown",
-            user_name = log_sys:gets("initiator.user.name") or "unknown",
-            user_id = log_sys:gets("initiator.user.id") or "0",
-            command_path = log_sys:gets("initiator.process.path.full") or "unknown",
-            command = command,
-            operation_type = operation_type
-        },
-        risk_level = risk,
-        asset_ip = log_exec:get_asset_data("observer.host.ip"),
-        asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
-        asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
-        asset_mac = "",
-        create_incident = true,
-        incident_group = "Data Exfiltration",
-        assign_to_customer = false,
-        incident_identifier = "",
-        logs = grouped.aggregatedData.loglines,
-        mitre = mitre or {"T1001.002"},
-        trim_logs = 10
-    })
-
-    grouper1:clear()
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
