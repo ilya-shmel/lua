@@ -17,7 +17,7 @@ local aggregated_by = {"file.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Фаловые паттерны
-local archive_extentions = { ".zip", ".rar", ".7z", ".tar", ".gz", ".bz", ".dat", ".cab", ".lha", ".arj", ".ace", ".z" }
+local archive_extentions = { ".zip", ".rar", ".7z", ".tar", ".tarz", ".gz", ".bz", ".dat", ".cab", ".lha", ".arj", ".ace", ".z" }
 local image_extentions = { ".jpg", ".bmp", ".gif", ".png", ".webp", ".raw", ".tiff", ".psd" }
 local source_access_list = "%%4416" --Source RedData
 local archive_access_list = { "%%4416", "%%4417", "%%4418" } --Archive RedData/Create Archive
@@ -27,20 +27,25 @@ local destination_access_list = { "%%4417", "%%4418" } --Destination Write
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
     local file_name = logline:gets("target.object.name"):lower()
-    local ad_access_list = logline:gets("initiator.permissions.requested.ad_access_list")
+    local ad_access_list = tostring(logline:gets("initiator.permissions.requested.ad_access_list"))
     
+    log("EventID: " ..event_id.. ". File: " ..file_name.. ". Access list: " ..ad_access_list)
+
     if compare(event_id, "==", "4663") then
-                
-        if contains(image_extentions, "suffix", file_name) then
-            if compare(ad_access_list, "==", source_access_list) then
+        if contains(image_extentions, file_name, "suffix") then
+            log("ad_access_list: " ..ad_access_list.. ", source_access_list" ..source_access_list )
+            if ad_access_list:search(source_access_list) then
+                log("***Source_file***")
                 set_field_value(logline, "file.type", "source file")
                 grouper1:feed(logline)
-            elseif contains(destination_access_list, "exact", ad_access_list) then
+            elseif contains(destination_access_list, ad_access_list, "sub") then
+                log("***Destination_file***")
                 set_field_value(logline, "file.type", "destination file")
                 grouper1:feed(logline)
             end
-        elseif contains(archive_extentions, "suffix", file_name) then
-            if contains(archive_access_list, "exact", ad_access_list) then
+        elseif contains(archive_extentions, file_name, "suffix") then
+            if contains(archive_access_list, ad_access_list, "sub") then
+                log("***Archive file***")
                 set_field_value(logline, "file.type", "archive")
                 grouper1:feed(logline)
             end
@@ -48,11 +53,13 @@ function on_logline(logline)
     elseif compare(event_id, "==", "4656") then
         local access_mask = logline:gets("initiator.permissions.requested.access_mask")
         
-        if contains(image_extentions, "suffix", file_name) and compare(access_mask, "==", "0x120196") and contains(destination_access_list, "suffix", ad_access_list) then
+        if contains(image_extentions, file_name, "suffix") and compare(access_mask, "==", "0x120196") and contains(destination_access_list, ad_access_list, "sub") then
+            log("***Access event***")
             set_field_value(logline, "file.type", "destination file access")
             grouper1:feed(logline)
         end
     end
+    log("-----------")
 end
 
 -- Функция сработки группера
@@ -63,6 +70,8 @@ function on_grouped(grouped)
     local archive_event = nil
     local destination_event = nil
     local destination_access = nil
+
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
 
     if unique_events > 3 then 
 
@@ -116,6 +125,7 @@ function on_grouped(grouped)
                 }
             )
             grouper1:clear()
+        end    
     end
 end
 
