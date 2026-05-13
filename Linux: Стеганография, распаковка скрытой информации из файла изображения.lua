@@ -180,6 +180,7 @@ local function is_false_positive(cmd)
 end
 
 local function analyze_threat(cmd)
+    cmd = cmd:lower()
     if is_false_positive(cmd) then
         return nil, 0, nil
     end
