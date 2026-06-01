@@ -6,13 +6,15 @@ local template = [[
 IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Выполнена команда: {{.Meta.command}}
-Процесс: {{.Meta.process}}   
+Исполняемый файл: {{ .Meta.service }}
+Файл изображения: {{ .Meta.image }}
+Архив: {{ .Meta.archive }}
+Целевой файл: {{ .Meta.destination }}
 ]]
 
 -- Параметры группера
 local detection_window = "1m"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "initiator.process.id"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "initiator.user.name"}
 local aggregated_by = {"file.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
@@ -29,23 +31,19 @@ function on_logline(logline)
     local file_name = logline:gets("target.object.name"):lower()
     local ad_access_list = tostring(logline:gets("initiator.permissions.requested.ad_access_list"))
     
-    log("EventID: " ..event_id.. ". File: " ..file_name.. ". Access list: " ..ad_access_list)
+    log("EventID: " ..event_id.. ". User: " ..logline:gets("initiator.user.name").. ". File: " ..file_name.. ". Access list: " ..ad_access_list)
 
     if compare(event_id, "==", "4663") then
         if contains(image_extentions, file_name, "suffix") then
-            log("ad_access_list: " ..ad_access_list.. ", source_access_list" ..source_access_list )
             if ad_access_list:search(source_access_list) then
-                log("***Source_file***")
                 set_field_value(logline, "file.type", "source file")
                 grouper1:feed(logline)
             elseif contains(destination_access_list, ad_access_list, "sub") then
-                log("***Destination_file***")
                 set_field_value(logline, "file.type", "destination file")
                 grouper1:feed(logline)
             end
         elseif contains(archive_extentions, file_name, "suffix") then
             if contains(archive_access_list, ad_access_list, "sub") then
-                log("***Archive file***")
                 set_field_value(logline, "file.type", "archive")
                 grouper1:feed(logline)
             end
@@ -54,12 +52,10 @@ function on_logline(logline)
         local access_mask = logline:gets("initiator.permissions.requested.access_mask")
         
         if contains(image_extentions, file_name, "suffix") and compare(access_mask, "==", "0x120196") and contains(destination_access_list, ad_access_list, "sub") then
-            log("***Access event***")
             set_field_value(logline, "file.type", "destination file access")
             grouper1:feed(logline)
         end
     end
-    log("-----------")
 end
 
 -- Функция сработки группера
