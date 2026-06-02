@@ -59,8 +59,8 @@ function on_grouped(grouped)
     local log_handle_data = nil
 
     if unique_events > 1 then
-        for _, event in ipairs(events) then 
-            local event_id = logline:gets("observer.event.id")
+        for _, event in ipairs(events) do 
+            local event_id = event:gets("observer.event.id")
             local file_type = event:gets("file.type")
             
             if compare(event_id, "==", "4104") then
@@ -81,7 +81,7 @@ function on_grouped(grouped)
         end
         
         if log_command and (log_access_image or log_access_data) and (log_handle_image or log_handle_data) then
-            local initiator_name = log_access_data:get("initiator.user.name") or 
+            local initiator_name = log_access_data:get("initiator.user.name") or log_handle_data:get("initiator.user.name")
             local host_ip = log_command:get("observer.host.ip") or log_command:get("reportchain.collector.host.ip")
             local host_name = log_command:gets("observer.host.hostname", "Имя узла не определено")
             local host_fqdn = log_command:gets("observer.host.fqdn", "FQDN узла не определено")
@@ -122,6 +122,7 @@ function on_grouped(grouped)
                 }
             )
             grouper1:clear()
+        end
     end
 end
 
