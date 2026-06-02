@@ -6,8 +6,11 @@ local template = [[
 IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Выполнена команда: {{.Meta.command}}
-Процесс: {{.Meta.process}}   
+Выполнена команда: {{ .Meta.command }}
+Процесс: {{ .Meta.process }}
+Имя скрипта/командлета: {{ .Meta.script_file }}
+Имя графического файла: {{ .Meta.image_file }}
+Имя результирующего файла: {{ .Meta.data_file }}   
 ]]
 
 -- Параметры группера
@@ -18,6 +21,8 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Паттерны
 local image_extentions = { ".jpg", ".bmp", ".gif", ".png", ".webp", ".raw", ".tiff", ".psd" }
+local source_access_list = "%%4417"
+local destination_access_list = { "%%4417", "%%4423" }
 
 -- Функция работы с логлайном
 function on_logline(logline)
@@ -27,24 +32,28 @@ function on_logline(logline)
     if compare(event_id, "==", "4104") then
         local command_executed = logline:gets("initiator.command.executed"):lower()
         
-        if command_executed:match("function%sextract-invoke-psimage") then
+        if command_executed:match("function%sextract%-invoke%-psimage") then
             set_field_value(logline, "event.process.id", process_id)
             grouper1:feed(logline)    
         end
     elseif compare(event_id, "==", "4663") or compare(event_id, "==", "4656") then
+        local ad_permissions = logline:gets("initiator.permissions.requested.ad_access_list")
+        ad_permissions = ad_permissions:gsub("[\r\n\t]", "") -- убрать лишние непечатные символы, если присутствуют
         local object_name = logline:gets("target.object.name"):lower()
         local extention = object_name:match("%.%w+$")
 
-        if contains(image_extentions, extention, "exact") then
-            set_field_value(logline, "file.type", "image")    
-        else 
-            set_field_value(logline, "file.type", "data")
+        if contains(image_extentions, extention, "exact") and compare(source_access_list, "==", ad_permissions) then
+            set_field_value(logline, "file.type", "source_image")    
+        elseif contains(destination_access_list, ad_permissions, "sub") then
+            set_field_value(logline, "file.type", "result_data")
         end
 
-        process_id = logline:gets("initiator.process.id")
-        process_id = tonumber(process_id:gsub("^0[xX]", ""), 16) -- приводим к десятичному представлению для последующей группировки
-        set_field_value(logline, "event.process.id", process_id)
-        grouper1:feed(logline)
+        if logline:get("file.type") then
+            process_id = logline:gets("initiator.process.id")
+            process_id = tonumber(process_id:gsub("^0[xX]", ""), 16) -- приводим к десятичному представлению для последующей группировки
+            set_field_value(logline, "event.process.id", process_id)
+            grouper1:feed(logline)
+        end
     end
 end
 
@@ -58,6 +67,9 @@ function on_grouped(grouped)
     local log_handle_image = nil
     local log_handle_data = nil
 
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    log("Event 1: " ..events[1]:gets("observer.event.id").. ", Event 2: " ..events[2]:gets("observer.event.id").. ", Event 3: " ..events[3]:gets("observer.event.id").. ", Event 4: " ..events[4]:gets("observer.event.id"))
+
     if unique_events > 1 then
         for _, event in ipairs(events) do 
             local event_id = event:gets("observer.event.id")
@@ -66,13 +78,13 @@ function on_grouped(grouped)
             if compare(event_id, "==", "4104") then
                 log_command = event
             elseif compare(event_id, "==", "4663") then
-                if file_type == "image" then
+                if file_type == "source_image" then
                     log_access_image = event
                 else
                     log_access_data = event
                 end
             elseif compare(event_id, "==", "4656") then
-                if file_type == "image" then
+                if file_type == "source_image" then
                     log_handle_image = event
                 else
                     log_handle_data = event
@@ -101,7 +113,7 @@ function on_grouped(grouped)
                     user_name=initiator_name,
                     command=command_executed,
                     process=process_path,
-                    script_name=service_name,
+                    script_file=script_name,
                     image_file=image_name,
                     data_file=data_name,
                     host_ip=host_ip,
