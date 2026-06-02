@@ -23,7 +23,7 @@ local archive_extentions = { ".zip", ".rar", ".7z", ".tar", ".tarz", ".gz", ".bz
 local image_extentions = { ".jpg", ".bmp", ".gif", ".png", ".webp", ".raw", ".tiff", ".psd" }
 local source_access_list = "%%4416" --Source RedData
 local archive_access_list = { "%%4416", "%%4417", "%%4418" } --Archive RedData/Create Archive
-local destination_access_list = { "%%4417", "%%4418" } --Destination Write
+local destination_access_list = { "%%4417", "%%4418", "%%4423" } --Destination Write
 
 -- Функция работы с логлайном
 function on_logline(logline)
