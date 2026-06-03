@@ -63,13 +63,8 @@ function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_command = nil
---    local log_access_image = nil
---    local log_access_data = nil
     local log_handle_image = nil
     local log_handle_data = nil
-
---    log("Events: " ..#events.. ". Unique events: " ..unique_events)
---    log("Event 1: " ..events[1]:gets("observer.event.id").. ", Event 2: " ..events[2]:gets("observer.event.id").. ", Event 3: " ..events[3]:gets("observer.event.id"))
 
     if unique_events > 1 then
         for _, event in ipairs(events) do 

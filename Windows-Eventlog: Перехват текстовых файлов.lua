@@ -12,98 +12,90 @@ local template = [[
 ]]
 
 local detection_window = "1m"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "initiator.user.id", "initiator.user.name"}
-local aggregated_by = {"target.image.name"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "initiator.process.id"}
+local aggregated_by = {"target.directory.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
-local whitelist_pattern = "(?:Microsoft\\.PowerShell\\.Cmdletization|\\$script:ClassName|\\$script:ObjectModelWrapper|ArchiveResources\\.psd1)"
-local prefix = "(?:^|\\s+|\"|\'|`|\\||&|\\\\)"
-local file_extention = "(?:txt|log|conf(?:ig)?|ini|json|xml|ya?ml|csv|dat|bak|cfg|properties|credentials|pwd|password|secret|key)"
-local pattern_read_copy = prefix.. "(?:(?:x|robo)?copy|move|type|cat|more|get-content)(?:\\.exe[\'\"]?)?\\s+[a-z]:\\\\[\\s\\S]*?\\." ..file_extention
-local pattern_archive_transfer = prefix.. "(?:(?:x|robo)?copy|move|type|cat|more|get-content)(?:\.exe)?\\s+[a-z]:\\.*?\\.(?:txt|log|conf|config|bak|xml|inf|kdbx|key|pem|ppk|credentialstxt|secretstxt|webconfig|env)"
-local pattern_search_export = prefix.. "(?:findstr|select-string|grep)\\s+[\\s\\S]*(?:password|passwd|pwd|secret|credential|api[_-]?key|token|auth)|\\\\(?:windows\\\\system32\\\\config|etc|inetpub|programdata)\\\\[\\s\\S]*\\\\.(?:txt|log|conf|ini|xml|cfg)|(?:out-file|export-csv|export-clixml|>|>>)\\s+[^\\s]*\\.(?:txt|log|csv|json|xml|conf|config|bak)"
+local child_attributes = { "%%4417", "%%4423", "%%1539" }
 
-local function analyze(cmd)
-    cmd = cmd:lower()
-
-    if cmd:search(whitelist_pattern) then
-        return false
-    end
-
-    return cmd:search(pattern_read_copy) or cmd:search(pattern_archive_transfer) or cmd:search(pattern_search_export) or false
-end
 
 function on_logline(logline)
-    local cmd = logline:gets("initiator.command.executed", "")
-    local event_id = logline:gets("observer.event.id", "")
+    local file_type = nil
+    local file_fullname = logline:gets("target.object.name") 
+    local file_name = file_fullname:match("[^\\]+$")
+    local directory_name = file_fullname:gsub("[^\\]+$", ""):gsub("\\$", "")
+    local ad_access_list = logline:gets("initiator.permissions.requested.ad_access_list")
+    local attribute_value = logline:gets("target.object.attribute.value"):lower()
     
-    if tostring(event_id) == "4103" then
-        cmd = cmd:lower()
-        
-        if cmd == "get-content" then
-            local attr_value = logline:gets("target.object.attribute.value", "")
-            local is_text_file = attr_value:search("\\.(?:txt|log|conf|config|ini|json|xml|yaml|yml|csv|dat|bak|cfg|properties|credentials|pwd|password|secret|key|inf)$")
-            
-            if is_text_file then
-                grouper1:feed(logline)    
-            end
-        end
+    log("File: " ..file_name.. ", Dirname: " .. directory_name)
+
+    if contains(child_attributes, attributes, "sub") and compare(attribute_value, "s:ai", "==") then 
+        set_field_value(logline, "file.type", "destination file")
     else
-        if analyze(cmd) then
-            grouper1:feed(logline)
-        end
+        set_field_value(logline, "file.type", "source file")
     end
+    
+    set_field_value(logline, "target.file.name", file_name)
+    set_field_value(logline, "target.directory.name", directory_name)
+    grouper1:feed(logline)
 end
 
 function on_grouped(grouped)
-    if grouped.aggregatedData.aggregated.total >= 1 then
-        local events = grouped.aggregatedData.loglines 
-        local command_executed = events[1]:gets("initiator.command.executed")
-        
-        local path_name = events[1]:get("initiator.process.path.name")
-        local image_name = events[1]:get("target.image.name")
-        local attribute_value = events[1]:get("target.object.attribute.value")
-        local service_name = events[1]:get("observer.service.name")
-
-        local path_original = events[1]:get("initiator.process.parent.path.original")
-
-        
-        local path_executed = path_name or image_name or attribute_value or service_name or "Путь неопределён"
-        local parent_path = path_original or path_name or service_name or "Процесс неопределён"
-        local initiator_name = events[1]:get("initiator.user.name") or "Пользователь неопределен"
-
-        if events[1]:get("observer.event.id") == 4104 then 
-            path_executed = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-            parent_path = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local parent_file_event = nil
+    local child_file_event = nil
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+     
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            local file_type = event:gets("file.type")
+            
+            if file_type == "source file" then
+                parent_file_event = event
+            elseif file_type == "destination file" then
+                child_file_event = event
+            end
         end
-
-        if #command_executed > 128 then
-            command_executed = command_executed:sub(1,128).. "... "
-        end
-
-        alert({
-            template = template,
-            meta = {
-                command=command_executed,
-                path=path_executed,
-                parent=parent_path,
-                user_name=initiator_name
-            },
-            risk_level = 6.0,
-            asset_ip = events[1]:get_asset_data("observer.host.ip"),
-            asset_hostname = events[1]:get_asset_data("observer.host.hostname"),
-            asset_fqdn = events[1]:get_asset_data("observer.host.fqdn"),
-            asset_mac = "",
-            create_incident = true,
-            incident_group = "Collection",
-            assign_to_customer = false,
-            incident_identifier = events[1]:gets("observer.host.fqdn", "unknown") .. "_" .. events[1]:gets("initiator.user.id", "unknown"),
-            logs = events,
-            mitre = {"T1539", "T1005"},
-            trim_logs = 10
-        })
         
-        grouper1:clear()
+
+        if parent_file_event and child_file_event then
+            local program_name = parent_file_event:get("initiator.process.path.full") or child_file_event:get("initiator.process.path.full")
+            local parent_filename = parent_file_event:get("target.object.name")
+            local child_filename = child_file_event:get("target.object.name")
+            local initiator_name = parent_file_event:get("initiator.user.name") or child_file_event:gets("initiator.user.name", "Пользователь не определён")
+            local host_ip = parent_file_event:gets("observer.host.ip", "IP-адрес узла не определён")
+            local host_name = parent_file_event:gets("observer.host.hostname", "Имя узла не определёно")
+            local host_fqdn = parent_file_event:gets("observer.host.fqdn", "FQDN узла не определёно")
+
+            alert({
+                template = template,
+                meta = {
+                    command=program_name,
+                    parent=parent_filename,
+                    child=child_filename,
+                    user_name=initiator_name,
+                    ip=host_ip,
+                    hostname=host_name
+                },
+                risk_level = 6.0,
+                asset_ip = host_ip,
+                asset_hostname = host_name,
+                asset_fqdn = host_fqdn,
+                asset_mac = "",
+                create_incident = true,
+                incident_group = "Collection",
+                assign_to_customer = false,
+                logs = events,
+                mitre = {"T1539", "T1560"},
+                trim_logs = 10
+            })
+            grouper1:clear()
+        elseif not parent_file_event then
+            error("==No parent events==")
+        elseif not child_file_event then
+            error("==No child events==")
+        end
     end
 end
 
