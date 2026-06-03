@@ -21,7 +21,7 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Паттерны
 local image_extentions = { ".jpg", ".bmp", ".gif", ".png", ".webp", ".raw", ".tiff", ".psd" }
-local source_access_list = "%%4417"
+local source_access_list = { "%%4417", "%%4418" }
 local destination_access_list = { "%%4417", "%%4423" }
 
 -- Функция работы с логлайном
@@ -36,19 +36,20 @@ function on_logline(logline)
             set_field_value(logline, "event.process.id", process_id)
             grouper1:feed(logline)    
         end
-    elseif compare(event_id, "==", "4663") or compare(event_id, "==", "4656") then
+    elseif compare(event_id, "==", "4656") then
         local ad_permissions = logline:gets("initiator.permissions.requested.ad_access_list")
         ad_permissions = ad_permissions:gsub("[\r\n\t]", "") -- убрать лишние непечатные символы, если присутствуют
         local object_name = logline:gets("target.object.name"):lower()
         local extention = object_name:match("%.%w+$")
-
-        if contains(image_extentions, extention, "exact") and compare(source_access_list, "==", ad_permissions) then
+        log("Extention: " ..extention)
+        if contains(image_extentions, extention, "exact") and contains(source_access_list, ad_permissions,"sub") then
             set_field_value(logline, "file.type", "source_image")    
         elseif contains(destination_access_list, ad_permissions, "sub") then
             set_field_value(logline, "file.type", "result_data")
         end
 
         if logline:get("file.type") then
+            log("File type: " .. logline:get("file.type"))
             process_id = logline:gets("initiator.process.id")
             process_id = tonumber(process_id:gsub("^0[xX]", ""), 16) -- приводим к десятичному представлению для последующей группировки
             set_field_value(logline, "event.process.id", process_id)
@@ -62,27 +63,22 @@ function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_command = nil
-    local log_access_image = nil
-    local log_access_data = nil
+--    local log_access_image = nil
+--    local log_access_data = nil
     local log_handle_image = nil
     local log_handle_data = nil
 
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    log("Event 1: " ..events[1]:gets("observer.event.id").. ", Event 2: " ..events[2]:gets("observer.event.id").. ", Event 3: " ..events[3]:gets("observer.event.id").. ", Event 4: " ..events[4]:gets("observer.event.id"))
+--    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+--    log("Event 1: " ..events[1]:gets("observer.event.id").. ", Event 2: " ..events[2]:gets("observer.event.id").. ", Event 3: " ..events[3]:gets("observer.event.id"))
 
     if unique_events > 1 then
         for _, event in ipairs(events) do 
             local event_id = event:gets("observer.event.id")
             local file_type = event:gets("file.type")
+            log("EventID: " .. event_id .. ", File Type: " .. file_type)
             
             if compare(event_id, "==", "4104") then
                 log_command = event
-            elseif compare(event_id, "==", "4663") then
-                if file_type == "source_image" then
-                    log_access_image = event
-                else
-                    log_access_data = event
-                end
             elseif compare(event_id, "==", "4656") then
                 if file_type == "source_image" then
                     log_handle_image = event
@@ -92,16 +88,16 @@ function on_grouped(grouped)
             end
         end
         
-        if log_command and (log_access_image or log_access_data) and (log_handle_image or log_handle_data) then
-            local initiator_name = log_access_data:get("initiator.user.name") or log_handle_data:get("initiator.user.name")
+        if log_command and log_handle_image and log_handle_data then
+            local initiator_name = log_handle_data:get("initiator.user.name")
             local host_ip = log_command:get("observer.host.ip") or log_command:get("reportchain.collector.host.ip")
             local host_name = log_command:gets("observer.host.hostname", "Имя узла не определено")
             local host_fqdn = log_command:gets("observer.host.fqdn", "FQDN узла не определено")
             local script_name = log_command:get("initiator.process.path.name", "Имя модуля не определено")
-            local image_name = log_access_image:get("target.object.name") or log_handle_image:gets("target.object.name", "Имя файла неопределено")
-            local data_name = log_access_data:get("target.object.name") or log_handle_data:gets("target.object.name", "Имя файла неопределено")
+            local image_name = log_handle_image:gets("target.object.name", "Имя файла неопределено")
+            local data_name = log_handle_data:gets("target.object.name", "Имя файла неопределено")
             local command_executed = log_command:gets("initiator.command.executed")
-            local process_path = log_access_data:get("initiator.process.path.full") or log_handle_data:get("initiator.process.path.full") or log_access_image:gets("initiator.process.path.full") or log_handle_image:gets("initiator.process.path.full", "Путь неопределён")
+            local process_path = log_handle_data:get("initiator.process.path.full") or log_handle_image:gets("initiator.process.path.full", "Путь неопределён")
 
             if #command_executed > 64 then
                 command_executed = command_executed:sub(1, 64).. "... "
