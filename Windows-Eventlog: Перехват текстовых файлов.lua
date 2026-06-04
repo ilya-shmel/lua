@@ -1,14 +1,16 @@
 local template = [[
-Обнаружен перехват текстового файла.
+Подозрение на перехват текстового файла.
 
-Узел: {{ if and .First.observer.host.hostname .First.observer.host.ip }}{{ .First.observer.host.hostname }} ({{ .First.observer.host.ip }}){{ else if .First.observer.host.hostname }}{{ .First.observer.host.hostname }}{{ else if .First.observer.host.ip }}{{ .First.observer.host.ip }}{{ else }}Не определен{{ end }}
-Пользователь: {{ if .First.initiator.user.name }}{{ .First.initiator.user.name }}{{ end }}{{ if and .First.initiator.user.name .First.initiator.user.id }} / {{ end }}{{ if .First.initiator.user.id }}{{ .First.initiator.user.id }}{{ end }}
+Узел: 
+IP-адрес: {{ .Meta.ip }}
+Имя узла: {{ .Meta.hostname }}
+
 
 Выполненные команды:
 Пользователь (инициатор): {{ .Meta.user_name }}
 Выполненная команда: {{ .Meta.command }}
-Окружение, из которого выполнялась команда: {{ .Meta.path }}
-Родительский процесс: {{ .Meta.parent}}
+Перехватываемый файл: {{ .Meta.parent }}
+Результирующий файл: {{ .Meta.child}}
 ]]
 
 local detection_window = "1m"
@@ -27,9 +29,7 @@ function on_logline(logline)
     local ad_access_list = logline:gets("initiator.permissions.requested.ad_access_list")
     local attribute_value = logline:gets("target.object.attribute.value"):lower()
     
-    log("File: " ..file_name.. ", Dirname: " .. directory_name)
-
-    if contains(child_attributes, attributes, "sub") and compare(attribute_value, "s:ai", "==") then 
+    if contains(child_attributes, ad_access_list, "sub") and compare(attribute_value, "==", "s:ai") then 
         set_field_value(logline, "file.type", "destination file")
     else
         set_field_value(logline, "file.type", "source file")
@@ -45,7 +45,6 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local parent_file_event = nil
     local child_file_event = nil
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
      
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -64,7 +63,7 @@ function on_grouped(grouped)
             local parent_filename = parent_file_event:get("target.object.name")
             local child_filename = child_file_event:get("target.object.name")
             local initiator_name = parent_file_event:get("initiator.user.name") or child_file_event:gets("initiator.user.name", "Пользователь не определён")
-            local host_ip = parent_file_event:gets("observer.host.ip", "IP-адрес узла не определён")
+            local host_ip = parent_file_event:gets("observer.host.ip", parent_file_event:gets("reportchain.collector.host.ip"))
             local host_name = parent_file_event:gets("observer.host.hostname", "Имя узла не определёно")
             local host_fqdn = parent_file_event:gets("observer.host.fqdn", "FQDN узла не определёно")
 
