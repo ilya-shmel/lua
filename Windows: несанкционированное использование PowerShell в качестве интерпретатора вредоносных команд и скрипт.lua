@@ -19,11 +19,6 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения, шаблоны
 local abuse_patterns = { 
---    suspicious_parameters = {
---        pattern = "-(?:e(nc)?(odedcommand)?|executionpolicy\\s+bypass|(?:windowstyle\\s+hidden)|no(?:logo|profile|(?:noninteractive|command_)))",
---        abuse_type = "Suspicious Parameters"
---    },
-    
     ath_command_line = {
         pattern = "(-(?:commandlineswitchtype|encodedcommandparamvariation|useencodedarguments|encodedargumentsparamvariation|commandparamvariation)[\\s\\w]+){2,4}",
         abuse_type = "ATH PowerShell CommandLine Parameters"
@@ -96,7 +91,6 @@ local function analyze(cmd)
         
         if is_abuse then
             local abuse_type = abuse_pattern.abuse_type
-            log("Abuse type:" ..abuse_type)
             return is_abuse,abuse_type 
         end
     end
@@ -119,7 +113,6 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local first_event = events[1]
-    log("Events: " ..#events)
     if #events > 0 then
         local initiator_name = first_event:get("initiator.user.name") or "Пользователь не определён" 
         local host_ip = first_event:get("observer.host.ip") or first_event:get("reportchain.collector.host.ip") or "IP-адрес не определён"
@@ -166,4 +159,3 @@ end
 
 -- Группер
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
-
