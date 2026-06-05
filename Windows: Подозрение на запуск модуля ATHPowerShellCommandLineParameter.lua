@@ -25,7 +25,8 @@ local function parseKeyValueSimple(string)
     local result = {}
     -- Убираем @{ и }
     local content = string:match("^@{(.*)}$")
-    
+--    log("Content: " .. content)
+
     for pair in content:gmatch("([^;]+)") do
         local key, value = pair:match("^(%w+)%s*=%s*(.+)$")
         if key and value then
@@ -42,6 +43,10 @@ local function parseKeyValueSimple(string)
         end
     end
     
+    local count = 0
+    for _ in pairs(result) do count = count + 1 end
+    log("Result elements count: " .. count)
+
     return result
 end
 
@@ -58,10 +63,14 @@ function on_logline(logline)
         local object_name = logline:gets("target.object.name")
         object_data = parseKeyValueSimple(object_name)
         
+        log("#Data: " .. tostring(#object_data))
+
         local test_guid = object_data.TestGuid
         local process_id = object_data.ProcessId
         local command_line = object_data.CommandLine
         local test_status = object_data.TestSuccess
+
+--        log("GUID: " .. test_guid .. ", ID: " .. process_id .. ", Command: " .. command_line .. ", Status: " .. test_status)
 
         if test_guid and process_id then
             set_field_value(logline, "target.object.original", test_guid)
@@ -83,6 +92,7 @@ function on_grouped(grouped)
     local status = nil
     
     log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    log("Type: " ..events[1]:get("target.object.type"))
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
