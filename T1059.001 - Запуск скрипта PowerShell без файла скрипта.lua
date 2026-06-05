@@ -6,9 +6,10 @@ local template = [[
 IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Выполнена команда: {{.Meta.command}}
-Процесс: {{ .Meta.process}}
-Тип угрозы: {{ .Meta.threat_caption}}   
+Выполнена скрытая команда: {{ .Meta.command }}
+Цепочка команд: {{ .Meta.all_commands }}
+Начальный объект: {{ .Meta.source }}
+Конечный объект: {{ .Meta.destination }}
 ]]
 
 -- Параметры группера
@@ -48,6 +49,7 @@ function on_grouped(grouped)
     local commands = {}
     local all_commands = nil
     
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
 
     if unique_events > 2 then
         for _, event in ipairs(events) do
@@ -55,7 +57,7 @@ function on_grouped(grouped)
             local command_executed = event:gets("initiator.command.executed")
             table.insert(commands, command_executed)
 
-            if event_type == "executed" then
+            if event_type == "execute" then
                log_exec = event
             elseif event_type == "read" then
                 log_read = event
@@ -86,22 +88,21 @@ function on_grouped(grouped)
             local source_path = log_read:gets("target.object.name")
             local destination_path = log_write:get("target.object.name")
 
-            if #all_comands > 128 then
-                all_commans = all_commans:sub(1, 128).. "... "
+            if #all_commands > 128 then
+                all_commands = all_commands:sub(1, 128).. "... "
             end
 
              alert({
                 template = template,
                 meta = {
                     user_name=initiator_name,
-                    command=command_executed,
-                    process=process_path,
+                    command=hidden_command,
                     service=service_name,
-                    threat_caption=abuse_type,
                     hostname=host_name,
                     host_ip=host_ip,
-                    process=process_path,
-                    all_commands=all_commands 
+                    all_commands=all_commands,
+                    source=source_path,
+                    destination=destination_path 
                     },
                 risk_level = 7.0, 
                 asset_ip = host_ip,
