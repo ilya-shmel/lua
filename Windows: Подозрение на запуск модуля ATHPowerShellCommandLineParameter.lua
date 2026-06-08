@@ -75,7 +75,7 @@ function on_grouped(grouped)
             end
             
             if #command_executed > 128 then
-                command_executed = all_commands:sub(1, 128).. "... "
+                command_executed = command_executed:sub(1, 128).. "... "
             end
 
              alert({
