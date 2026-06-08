@@ -19,37 +19,6 @@ local grouped_by = { "observer.host.ip", "observer.host.hostname", "event.proces
 local aggregated_by = {"target.object.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
--- Регулярные выражения, шаблоны
-
-local function parseKeyValueSimple(string)
-    local result = {}
-    -- Убираем @{ и }
-    local content = string:match("^@{(.*)}$")
---    log("Content: " .. content)
-
-    for pair in content:gmatch("([^;]+)") do
-        local key, value = pair:match("^(%w+)%s*=%s*(.+)$")
-        if key and value then
-            -- Приводим типы
-            if value == "True" then
-                result[key] = true
-            elseif value == "False" then
-                result[key] = false
-            elseif tonumber(value) then
-                result[key] = tonumber(value)
-            else
-                result[key] = value
-            end
-        end
-    end
-    
-    local count = 0
-    for _ in pairs(result) do count = count + 1 end
-    log("Result elements count: " .. count)
-
-    return result
-end
-
 -- Функция работы с логлайном
 function on_logline(logline)
     local object_type = logline:gets("target.object.type"):lower()
@@ -60,23 +29,10 @@ function on_logline(logline)
         set_field_value(logline, "event.process.id", process_id)
         grouper1:feed(logline)
     elseif object_type == "inputobject" then
-        local object_name = logline:gets("target.object.name")
-        object_data = parseKeyValueSimple(object_name)
-        
-        log("#Data: " .. tostring(#object_data))
+        local object_original = logline:gets("target.object.original")
+        local event_id = logline:gets("event.process.id")    
 
-        local test_guid = object_data.TestGuid
-        local process_id = object_data.ProcessId
-        local command_line = object_data.CommandLine
-        local test_status = object_data.TestSuccess
-
---        log("GUID: " .. test_guid .. ", ID: " .. process_id .. ", Command: " .. command_line .. ", Status: " .. test_status)
-
-        if test_guid and process_id then
-            set_field_value(logline, "target.object.original", test_guid)
-            set_field_value(logline, "event.process.id", process_id)
-            set_field_value(logline, "initiator.process.command", command_line)
-            set_field_value(logline, "target.object.status", test_status)
+        if object_original and event_id then
             grouper1:feed(logline)
         end
     end
@@ -90,33 +46,32 @@ function on_grouped(grouped)
     local log_exec = nil
     local log_result = nil
     local status = nil
-    
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    log("Type: " ..events[1]:get("target.object.type"))
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
-            local object_type = logline:gets("target.object.type"):lower()
+            local object_type = event:gets("target.object.type"):lower()
 
             if object_type == "object" then
                log_exec = event
-            elseif event_type == "inputobject" then
-                log_result = event
+            else
+               log_result = event
             end
         end
 
         local object_name = log_exec:gets("target.object.name")
         local object_original = log_result:gets("target.object.original")
 
-        if compare (object_name, object_original, "==") then
+        if compare (object_name, "==", object_original) and log_exec and log_result then
             local initiator_name = log_exec:get("initiator.user.name") 
             local host_ip = log_exec:get("observer.host.ip") or log_exec:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
             local host_name = log_exec:gets("observer.host.hostname", "Имя узла не определёно")
             local host_fqdn = log_exec:gets("observer.host.fqdn", "FQDN узла не определёно")
             local command_executed = log_exec:gets("initiator.command.executed")
             
-            if compare(log_result:gets("target.object.status"):lower(), "true", "==") then
+            if compare(log_result:gets("target.object.status"):lower(), "==", "true") then
                 status = "Команда выполнена успешно"
+            else
+                status = "Команда завершилась с ошибкой"
             end
             
             if #command_executed > 128 then
