@@ -6,8 +6,9 @@ local template = [[
 IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Выполнена команда: {{.Meta.command}}
-Процесс: {{.Meta.process}}   
+Выполнена команда: {{ .Meta.command }}
+Выполненный скрипт/файл : {{ .Meta.script_name }}
+Результирующий файл: {{ .Meta.file_name }}
 ]]
 
 -- Параметры группера
@@ -17,12 +18,12 @@ local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения, шаблоны
-local hound_patterns = { "io.compression.deflatestream", "system.collections.generic.list[system.object]"}
+local hound_patterns = { "io.compression.deflatestream", "system.collections.generic.list[system.object]" }
 
 -- Функция работы с логлайном
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
-    
+
     if compare(event_id, "==", "4103") then
         local object_name = logline:gets("target.object.name"):lower()
         
@@ -31,14 +32,29 @@ function on_logline(logline)
             set_field_value(logline, "event.process.id", process_id)
             grouper1:feed(logline)
         end
+    elseif compare(event_id, "==", "4688") then
+        local initiator_pid = nil
+        local command_executed = logline:gets("initiator.command.executed"):lower()
+        
+        if command_executed:match("--buildcache") and (command_executed:match("--user") or command_executed:match("--dc")) then
+            initiator_pid = logline:gets("target.process.id")
+        else
+            initiator_pid = logline:gets("initiator.process.parent.id")
+        end
+        
+        set_field_value(logline, "event.process.id", initiator_pid)
+        grouper1:feed(logline)
     elseif compare(event_id, "==", "4663") then
         local object_name = logline:gets("target.object.name")
+        local initiator_pid = logline:gets("initiator.process.id")
         local file_name = object_name:match("[%d]+_[%w]+.zip")
     
         if file_name then
-            local initiator_pid = logline:gets("initiator.process.id")
             local decimal_pid = tonumber(initiator_pid:gsub("^0[xX]", ""), 16)
             set_field_value(logline, "event.process.id", decimal_pid)
+            grouper1:feed(logline)
+        else
+            set_field_value(logline, "event.process.id", initiator_pid)
             grouper1:feed(logline)
         end
     end
@@ -57,7 +73,7 @@ function on_grouped(grouped)
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
 
-            if compare(event_id, "==", "4103") then
+            if compare(event_id, "==", "4103") or compare(event_id, "==", "4688") then
                table.insert(log_exec, event)
                local command_executed = event:gets("initiator.command.executed")
                table.insert(commands, command_executed)
@@ -83,7 +99,11 @@ function on_grouped(grouped)
                 all_commands = all_commands:sub(1, 128).. "... "
             end
             
-            local script_path = first_exec_event:gets("initiator.file.name")
+            local script_path = first_exec_event:get("initiator.file.name") or first_exec_event:get("target.process.path.full") or first_exec_event:gets("initiator.process.parent.path.original", "Имя файла не определено")
+            
+            if script_path:match("^%d+$") then
+                script_path = "Имя файла не определено"
+            end
 
             local file_path = log_file:get("target.object.name")
 
