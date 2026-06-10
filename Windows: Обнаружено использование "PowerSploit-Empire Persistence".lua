@@ -24,9 +24,9 @@ function on_logline(logline)
     if compare(event_id, "==", "4104") then
         local command_executed = logline:gets("initiator.command.executed")
         local script_name = command_executed:match("[^/]+.ps1[%s]*")
-        log("File name: " .. script_name)
-
+        
         if script_name then 
+            log("File name: " .. script_name)
             set_field_value(logline, "initiator.file.name", script_name)
         end
     end
@@ -60,7 +60,7 @@ function on_grouped(grouped)
         
         if log_scriptblock_cmdlet and log_scriptblock_command and log_module then 
             local initiator_name = log_scriptblock_command:gets("initiator.user.name", "Пользователь не определён")  
-            local host_ip = log_scriptblock_command:get("observer.host.ip") or log_scriptblock:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
+            local host_ip = log_scriptblock_command:get("observer.host.ip") or log_scriptblock_command:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
             local host_name = log_scriptblock_command:gets("observer.host.hostname")
             local host_fqdn = log_scriptblock_command:gets("observer.host.fqdn")
             local command_executed = log_scriptblock_command:gets("initiator.command.executed")
