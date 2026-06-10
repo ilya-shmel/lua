@@ -52,9 +52,10 @@ function on_grouped(grouped)
         for _, event in ipairs(events) do
             local cmdlet = event:gets("initiator.process.command"):lower()
             local command_executed = event:gets("initiator.commands.executed")
+            local object_name = event:gets("target.object.name"):lower()
             table.insert(commands, command_executed)
 
-            if compare(cmdlet, "==", "new-object") then
+            if compare(cmdlet, "==", "new-object") and object_name:search("(system\\.)?(xml\\.)?xmldocument") then
                 log_object = event
             elseif compare(cmdlet, "==", "invoke-expression") then
                 log_exec = event
