@@ -18,7 +18,19 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Функция работы с логлайном
 function on_logline(logline)
-    log("EventID: " .. logline:gets("observer.event.id") .. ", Initiator PID: " .. logline:gets("observer.process.id"))
+--    log("EventID: " .. logline:gets("observer.event.id") .. ", Initiator PID: " .. logline:gets("observer.process.id"))
+    local event_id = logline:gets("observer.event.id")
+
+    if compare(event_id, "==", "4104") then
+        local command_executed = logline:gets("initiator.command.executed")
+        local script_name = command_executed:match("[^/]+.ps1[%s]*")
+        log("File name: " .. script_name)
+
+        if script_name then 
+            set_field_value(logline, "initiator.file.name", script_name)
+        end
+    end
+
     grouper1:feed(logline)
 
 end
@@ -27,7 +39,8 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_scriptblock = nil
+    local log_scriptblock_cmdlet = nil
+    local log_scriptblock_command = nil
     local log_module = nil
 
     if unique_events > 1 then
@@ -35,19 +48,23 @@ function on_grouped(grouped)
             local event_id = event:gets("observer.event.id")
 
             if compare(event_id, "==", "4104") then
-                log_scriptblock = event
-            else
+                if event:get("initiator.file.name") then
+                    log_scriptblock_command = event
+                else 
+                    log_scriptblock_cmdlet = event
+                end
+            elseif compare(event_id, "==", "4103") then    
                 log_module = event
             end
         end
         
-        if log_scriptblock and log_module then 
-            local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")  
-            local host_ip = log_scriptblock:get("observer.host.ip") or log_scriptblock:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
-            local host_name = log_scriptblock:gets("observer.host.hostname")
-            local host_fqdn = log_scriptblock:gets("observer.host.fqdn")
-            local command_executed = log_scriptblock:gets("initiator.command.executed")
-            local cmdlet  = log_module:gets("target.object.name")
+        if log_scriptblock_cmdlet and log_scriptblock_command and log_module then 
+            local initiator_name = log_scriptblock_command:gets("initiator.user.name", "Пользователь не определён")  
+            local host_ip = log_scriptblock_command:get("observer.host.ip") or log_scriptblock:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
+            local host_name = log_scriptblock_command:gets("observer.host.hostname")
+            local host_fqdn = log_scriptblock_command:gets("observer.host.fqdn")
+            local command_executed = log_scriptblock_command:gets("initiator.command.executed")
+            local script_name = log_module:gets("initiator.file.name")
             
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1, 128).. "... "
@@ -58,11 +75,11 @@ function on_grouped(grouped)
                 meta = {
                     user_name=initiator_name,
                     command=command_executed,
-                    cmdlet=cmdlet,
+                    file_name=script_name,
                     hostname=host_name,
                     host_ip=host_ip
                     },
-                risk_level = 7.0, 
+                risk_level = 6.0, 
                 asset_ip = host_ip,
                 asset_hostname = host_name,
                 asset_fqdn = host_fqdn,
