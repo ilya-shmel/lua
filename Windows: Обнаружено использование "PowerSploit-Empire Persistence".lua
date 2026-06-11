@@ -7,7 +7,7 @@ IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
 Выполнена команда: {{.Meta.command}}
-Командлет: {{ .Meta.cmdlet}}
+Имя файла: {{ .Meta.file_name}}
 ]]
 
 -- Параметры группера
@@ -18,7 +18,6 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Функция работы с логлайном
 function on_logline(logline)
---    log("EventID: " .. logline:gets("observer.event.id") .. ", Initiator PID: " .. logline:gets("observer.process.id"))
     local event_id = logline:gets("observer.event.id")
 
     if compare(event_id, "==", "4104") then
@@ -26,7 +25,6 @@ function on_logline(logline)
         local script_name = command_executed:match("[^/]+.ps1[%s]*")
         
         if script_name then 
-            log("File name: " .. script_name)
             set_field_value(logline, "initiator.file.name", script_name)
         end
     end
@@ -59,12 +57,12 @@ function on_grouped(grouped)
         end
         
         if log_scriptblock_cmdlet and log_scriptblock_command and log_module then 
-            local initiator_name = log_scriptblock_command:gets("initiator.user.name", "Пользователь не определён")  
+            local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")  
             local host_ip = log_scriptblock_command:get("observer.host.ip") or log_scriptblock_command:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
             local host_name = log_scriptblock_command:gets("observer.host.hostname")
             local host_fqdn = log_scriptblock_command:gets("observer.host.fqdn")
             local command_executed = log_scriptblock_command:gets("initiator.command.executed")
-            local script_name = log_module:gets("initiator.file.name")
+            local script_name = log_scriptblock_command:gets("initiator.file.name")
             
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1, 128).. "... "
