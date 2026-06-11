@@ -7,18 +7,27 @@ IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
 Выполнена команда: {{.Meta.command}}
-Командлет: {{ .Meta.cmdlet}}
+Имя файла: {{ .Meta.file_name}}
 ]]
 
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.process.id"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "event.process.id"}
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Функция работы с логлайном
 function on_logline(logline)
-    log("EventID: " .. logline:gets("observer.event.id") .. ", Initiator PID: " .. logline:gets("observer.process.id"))
+    local event_id = logline:gets("observer.event.id")
+
+    if compare(event_id, "==", "4688") then
+        local process_id = logline:gets("initiator.process.parent.id")
+        set_field_value(logline, "event.process.id", process_id)
+    elseif compare(event_id, "==", "4663") then
+        local process_id = logline:gets("initiator.process.id")
+        set_field_value(logline, "event.process.id", process_id)
+    end
+
     grouper1:feed(logline)
 
 end
@@ -27,44 +36,42 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_scriptblock = nil
-    local log_module = nil
-
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-
+    local log_exec = nil
+    local log_access = nil
+    
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
 
-            if compare(event_id, "==", "4104") then
-                log_scriptblock = event
-            else
-                log_module = event
+            if compare(event_id, "==", "4688") then
+                log_exec = event
+            else    
+                log_access = event
             end
         end
         
-        if log_scriptblock and log_module then 
-            local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")  
-            local host_ip = log_scriptblock:get("observer.host.ip") or log_scriptblock:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
-            local host_name = log_scriptblock:gets("observer.host.hostname")
-            local host_fqdn = log_scriptblock:gets("observer.host.fqdn")
-            local command_executed = log_scriptblock:gets("initiator.command.executed")
-            local cmdlet  = log_module:gets("target.object.name")
-            
+        if log_exec and log_access then 
+            local initiator_name = log_exec:gets("initiator.user.name", "Пользователь не определён")  
+            local host_ip = log_exec:get("observer.host.ip") or log_scriptblock_command:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
+            local host_name = log_exec:gets("observer.host.hostname")
+            local host_fqdn = log_exec:gets("observer.host.fqdn")
+            local command_executed = log_exec:gets("initiator.command.executed")
+            local file_name = command_executed:match("([^/]+%.sct)[\'\"%)]") or "Имя файла не определено"
+
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1, 128).. "... "
             end
 
-             alert({
+            alert({
                 template = template,
                 meta = {
                     user_name=initiator_name,
                     command=command_executed,
-                    cmdlet=cmdlet,
+                    file_name=file_name,
                     hostname=host_name,
                     host_ip=host_ip
                     },
-                risk_level = 7.0, 
+                risk_level = 8.0, 
                 asset_ip = host_ip,
                 asset_hostname = host_name,
                 asset_fqdn = host_fqdn,
@@ -74,7 +81,7 @@ function on_grouped(grouped)
                 assign_to_customer = false,
                 incident_identifier = "",
                 logs = events,
-                mitre = {"T1059.001"},
+                mitre = {"T1059.001", "T1218.005"},
                 trim_logs = 10
                 }
             )
