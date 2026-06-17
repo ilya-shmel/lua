@@ -1,14 +1,13 @@
 -- Шаблон алерта
 local template = [[
-Подозрение на запуск base64-закодированного скрипта PowerShell.
+Подозрение на переопределение системных команд.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP-адрес: {{ .Meta.host_ip }}
 Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
-Выполнена команда: {{ .Meta.command }}
-Целевая команда: {{ .Meta.target_command }}
-Командлет/скрипт: {{ .Meta.cmdlet }}
+Выполнена команда: {{.Meta.command}}
+Переопределённая команда: {{ .Meta.fake_command}}
 ]]
 
 -- Параметры группера
@@ -22,19 +21,16 @@ function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
 
     if compare(event_id, "==", "4688") then
-        local command_executed = logline:gets("initiator.command.executed"):lower()
-        local is_base64 = command_executed:search("(?:^|\\s|\'|\"|\\/)powershell\\.exe\\s+-e(ncodedcommand)?\\s+([\\w,+,\\/,%,=]+)")
-        
-        if is_base64 then
-            local process_id = logline:gets("target.process.id")
-            set_field_value(logline, "event.process.id", process_id)
-            grouper1:feed(logline)
-        end
+        local process_id = logline:gets("initiator.process.parent.id")
+        process_id = tonumber(process_id:gsub("^0[xX]", ""), 16) -- Преобразование из шестнадцатеричной системы в десятичную
+        set_field_value(logline, "event.process.id", process_id)
     elseif compare(event_id, "==", "4103") then
         local process_id = logline:gets("observer.process.id")
         set_field_value(logline, "event.process.id", process_id)
-        grouper1:feed(logline)
     end
+
+    grouper1:feed(logline)
+
 end
 
 -- Функция сработки группера
@@ -54,23 +50,22 @@ function on_grouped(grouped)
                 log_module = event
             end
         end
+
+        local command_executed = log_exec:gets("initiator.command.executed")
+        local image_name = ((log_module:gets("initiator.file.path")):match("[^\\]+$")):gsub("%.exe$", "")
+        local is_real_command =  command_executed:search(image_name)
         
-        if log_exec and log_module then 
-            local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")  
+        
+        if not is_real_command then 
+            local initiator_name = log_exec:gets("initiator.user.name", "Пользователь не определён")  
             local host_ip = log_exec:get("observer.host.ip") or log_exec:gets("reportchain.collector.host.ip", "IP-адрес не определён") 
             local host_name = log_exec:gets("observer.host.hostname")
             local host_fqdn = log_exec:gets("observer.host.fqdn")
             local command_executed = log_exec:gets("initiator.command.executed")
-            local cmdlet = log_module:gets("initiator.process.command")
-            local target_command = log_module:gets("target.object.name")
+            local fake_command = log_module:gets("initiator.file.path")
 
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1, 128).. "... "
-            end
-
-
-            if #target_command > 128 then
-                target_command = target_command:sub(1, 128).. "... "
             end
 
             alert({
@@ -78,12 +73,11 @@ function on_grouped(grouped)
                 meta = {
                     user_name=initiator_name,
                     command=command_executed,
-                    target_command=target_command,
-                    cmdlet=cmdlet,
+                    fake_command=fake_command,
                     hostname=host_name,
                     host_ip=host_ip
                     },
-                risk_level = 9.0, 
+                risk_level = 7.0, 
                 asset_ip = host_ip,
                 asset_hostname = host_name,
                 asset_fqdn = host_fqdn,
@@ -93,7 +87,7 @@ function on_grouped(grouped)
                 assign_to_customer = false,
                 incident_identifier = "",
                 logs = events,
-                mitre = { "T1027.010", "T1059.001" },
+                mitre = { "T1059.001" },
                 trim_logs = 10
                 }
             )
