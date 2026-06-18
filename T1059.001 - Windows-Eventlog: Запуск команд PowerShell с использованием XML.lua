@@ -28,6 +28,7 @@ local invoke_patterns = { "io.compression.deflatestream", "system.collections.ge
 
 -- Функция алерта
 local function alert_function(ip, hostname, fqdn, user, cmd, xml_cmd, object, events, template)
+--    log("Alert CMD: " .. cmd)
     alert({
             template = template,
             meta = {
@@ -58,12 +59,14 @@ end
 local function unique_elements(commands_table)
     local seen = {}
     local result = {}
+    
     for _, element in ipairs(commands_table) do
         if not seen[element] then
             seen[element] = true
             table.insert(result, element)
         end
     end
+
     return result
 end
 
@@ -101,7 +104,7 @@ function on_grouped1(grouped)
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local cmdlet = event:gets("initiator.process.command"):lower()
-            local command_executed = event:gets("initiator.commands.executed")
+            local command_executed = event:gets("initiator.command.executed")
             local object_name = event:gets("target.object.name"):lower()
             table.insert(commands, command_executed)
 
@@ -115,13 +118,17 @@ function on_grouped1(grouped)
         if log_object and log_exec then 
             commands = unique_elements(commands)
             all_commands = table.concat(commands, "; ")
+            
+              if #all_commands > 128 then
+                all_commands = all_commands:sub(1, 128).. "... "
+            end
+            
             local initiator_name = log_exec:gets("initiator.user.name", "Пользователь не определён")  
             local host_ip = log_exec:get("observer.host.ip") or log_exec:gets("reportchain.collector.host.ip", "IP-адрес не определён")
             local host_name = log_exec:gets("observer.host.hostname", "Имя узла не определено")
             local host_fqdn = log_exec:gets("observer.host.fqdn", "FQDN узла не определено")
             local xml_command = log_exec:gets("target.object.name")
             local object_name = log_object:gets("target.object.name")
-
             alert_function(host_ip, host_name, host_fqdn, initiator_name, all_commands, xml_command, object_name, events, template)
             grouper1:clear()
         end
@@ -153,8 +160,12 @@ function on_grouped2(grouped)
             local host_fqdn = log_exec:gets("observer.host.fqdn", "FQDN узла не определено")
             local xml_command = log_module:gets("initiator.command.executed")
             local object_name = log_module:gets("target.object.name")
+            
+            if #command_executed > 128 then
+                command_executed = command_executed:sub(1, 128).. "... "
+            end
 
-            alert_function(host_ip, host_name, host_fqdn, initiator_name, all_commands, xml_command, object_name, events, template)
+            alert_function(host_ip, host_name, host_fqdn, initiator_name, command_executed, xml_command, object_name, events, template)
             grouper2:clear()
         end
     end
