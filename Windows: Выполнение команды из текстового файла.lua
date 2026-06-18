@@ -13,7 +13,7 @@ IP-адрес: {{ .Meta.host_ip }}
 -- Параметры группера
 local detection_window = "30s"
 local grouped_by = { "observer.host.ip", "observer.host.hostname", "observer.process.id" }
-local aggregated_by = { "initiator.process.command" }
+local aggregated_by = { "target.object.type" }
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Функция работы с логлайном
