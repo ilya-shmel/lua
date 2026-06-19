@@ -28,7 +28,6 @@ local invoke_patterns = { "io.compression.deflatestream", "system.collections.ge
 
 -- Функция алерта
 local function alert_function(ip, hostname, fqdn, user, cmd, xml_cmd, object, events, template)
---    log("Alert CMD: " .. cmd)
     alert({
             template = template,
             meta = {
