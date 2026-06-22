@@ -1,6 +1,6 @@
 -- Шаблоны алерта
 local template1 = [[
-Подозрение на запуск инструмента Mimikatz.
+Подозрение на запуск инструмента Mimikatz (mimikatz.exe).
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP-адрес: {{ .Meta.ip }}
@@ -184,6 +184,8 @@ function on_grouped3(grouped)
     local log_exec = nil
     local log_module = nil
     
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+
     if unique_events > 0 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -195,7 +197,8 @@ function on_grouped3(grouped)
             end
         end
 
-        if log_exec > 1 and log_module then
+        if log_exec and log_module then
+            log("Two events in grouper")
             local command_executed = log_module:gets("initiator.command.executed")
             local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")
             local host_ip = log_module:get("observer.host.ip") or log_module:gets("reportchain.collector.host.ip", "IP-адрес узла не определён")
@@ -214,7 +217,6 @@ function on_grouped3(grouped)
         end
     end
 end
-
 
 -- Групперы
 grouper1 = grouper.new(grouped_by1, aggregated_by1, grouped_time_field, detection_window1, on_grouped1)
