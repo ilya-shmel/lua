@@ -35,6 +35,8 @@ IP-адрес: {{ .Meta.ip }}
 Целевой файл: {{ .Meta.parent }}
 ]]
 
+local system_paths = { "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "C:\\Windows\\System32\\cmd.exe"}
+
 -- Параметры группера #1
 local detection_window1 = "30s"
 local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "initiator.command.type"}
@@ -184,8 +186,6 @@ function on_grouped3(grouped)
     local log_exec = nil
     local log_module = nil
     
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-
     if unique_events > 0 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -198,7 +198,6 @@ function on_grouped3(grouped)
         end
 
         if log_exec and log_module then
-            log("Two events in grouper")
             local command_executed = log_module:gets("initiator.command.executed")
             local initiator_name = log_module:gets("initiator.user.name", "Пользователь не определён")
             local host_ip = log_module:get("observer.host.ip") or log_module:gets("reportchain.collector.host.ip", "IP-адрес узла не определён")
@@ -206,6 +205,10 @@ function on_grouped3(grouped)
             local host_fqdn = log_module:gets("observer.host.fqdn", "FQDN узла не определено")
             local executor = log_exec:gets("initiator.command.executed")
             local target_file = log_module:gets("target.object.name")
+
+            if contains(system_paths, command_executed, "sub") then
+                command_executed = command_executed .. " " .. log_module:gets("initiator.process.command") .. " " .. target_file
+            end
                                 
             if #command_executed > 128 then
                 command_executed = command_executed:sub(1, 128).. "... "
