@@ -75,7 +75,6 @@ function on_grouped(grouped)
                  }
             )
             grouper1:clear()
-    
         end
     end
 end
