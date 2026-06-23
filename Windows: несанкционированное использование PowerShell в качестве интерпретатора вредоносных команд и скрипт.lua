@@ -4,7 +4,6 @@ local template = [[
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP-адрес: {{ .Meta.host_ip }}
-Имя узла: {{ .Meta.hostname }}
 Пользователь (инициатор): {{ .Meta.user_name }}
 Выполнена команда: {{.Meta.command}}
 Командлет: {{ .Meta.cmdlet}}
