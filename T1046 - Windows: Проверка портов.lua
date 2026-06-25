@@ -18,14 +18,20 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 function extract_image_name(command_string)
     command_string = command_string:lower()
-    local path, filename, image_name
-    path = command_string:match('"([^"]+)"') or command_string:match('^(%S+)') -- Ищем путь в кавычках. Если нет кавычек, то берём первое слово
+    local path, filename, image_name, interpreter_name
+    interpreter_name = command_string:match("[^%s;\\]?python%s+") -- Проверка на запуск файла через Python
     
-    if path then
-        filename = path:match('([^\\/]+)$')  -- Извлекаем имя файла из пути
-        image_name = filename:match('(.+)%.exe$') or filename -- Убираем расширение .exe
-        
-        return image_name
+    if interpreter_name then
+        return interpreter_name:gsub("%s", "")
+    else    
+        path = command_string:match('"([^"]+)"') or command_string:match('^(%S+)') -- Ищем путь в кавычках. Если нет кавычек, то берём первое слово
+    
+        if path then
+            filename = path:match('([^\\/]+)$')  -- Извлекаем имя файла из пути
+            image_name = filename:match('(.+)%.exe$') or filename -- Убираем расширение .exe
+
+            return image_name
+        end
     end
     
     return "Имя файла не определено"
@@ -42,20 +48,21 @@ function on_logline(logline)
         local process_id = logline:gets("observer.process.id")
         set_field_value(logline, "event.process.id", process_id)
         set_field_value(logline, "initiator.command.info", command_info)
-        log("Command info: " .. command_info)
+        log("ScriptBlock Command info: " .. command_info)
     elseif compare(event_id, "==", "4688") then
-        local target_image = logline:gets("target.image.name")
+        local target_image = logline:gets("target.image.name"):lower()
         local command_info = target_image:match("[^%.]+")
         local process_id = logline:gets("initiator.process.parent.id")
         process_id = tonumber(process_id:gsub("^0[xX]", ""), 16)
         set_field_value(logline, "event.process.id", process_id)
         set_field_value(logline, "initiator.command.info", command_info)
+        log("EXEC Command info: " .. command_info)
     elseif compare(event_id, "==", "4103") then
         local process_command = logline:gets("initiator.process.command"):lower()
         local process_id = logline:gets("observer.process.id")
         set_field_value(logline, "event.process.id", process_id)
         set_field_value(logline, "initiator.command.info", process_command)
-        log("Command info: " .. process_command)
+        log("Module Command info: " .. process_command)
     end
     
     grouper1:feed(logline)
