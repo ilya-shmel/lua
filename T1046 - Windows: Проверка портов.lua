@@ -1,6 +1,6 @@
 -- Шаблоны алерта
 local template = [[
-	Обнаружена проверка портов с помощью штатных или специальных утилит.
+	{{ .Meta.title }}.
 
     Узел: 
     IP-адрес: {{ or .Meta.ip "IP-адрес не определён" }}
@@ -9,6 +9,19 @@ local template = [[
     Выполненная команда: {{ .Meta.command }}
     Исполняемый файл/командлет: {{ .Meta.path }}
 ]]
+
+local alert_titles = {
+    { image = "python", title = "Использование Python для последовательного сканирования портов" },
+    { image = "nmap", title = "Использование Nmap для последовательного сканирования портов" },
+    { image = "portqry", title = "Атака через PortQry" },
+    { image = "test-netconnection", title = "PowerShell: Инициализация последовательных сетевых подключений (Port Knocking)" },
+    { image = "telnet", title = "Использование сетевых утилит для обхода закрытых портов (Port Knocking)" },
+    { image = "nc", title = "Использование сетевых утилит для обхода закрытых портов (Port Knocking)" },
+    { image = "ncat", title = "Использование сетевых утилит для обхода закрытых портов (Port Knocking)" },
+    { image = "netcat", title = "Использование сетевых утилит для обхода закрытых портов (Port Knocking)" },
+    { image = "masscan", title = "Использование утилиты Massscan для последовательного сканирования портов" },
+    { image = "portqry", title = "Использование утилиты PortQry для последовательного сканирования портов" }
+}
 
 -- Переменные для группера
 local detection_window = "30s"
@@ -42,13 +55,16 @@ function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
     local command_executed = logline:gets("initiator.command.executed"):lower()
     
-
     if compare(event_id, "==", "4104") then
-        local command_info = extract_image_name(command_executed)
-        local process_id = logline:gets("observer.process.id")
-        set_field_value(logline, "event.process.id", process_id)
-        set_field_value(logline, "initiator.command.info", command_info)
-        log("ScriptBlock Command info: " .. command_info)
+        local ip_address = command_executed:match("%d+%.%d+%.%d+%.%d+") -- Проверяем наличие IP-адреса в команде, если есть - отправляем в группер
+
+        if ip_address then
+            local command_info = extract_image_name(command_executed)
+            local process_id = logline:gets("observer.process.id")
+            set_field_value(logline, "event.process.id", process_id)
+            set_field_value(logline, "initiator.command.info", command_info)
+            grouper1:feed(logline)
+        end
     elseif compare(event_id, "==", "4688") then
         local target_image = logline:gets("target.image.name"):lower()
         local command_info = target_image:match("[^%.]+")
@@ -56,17 +72,14 @@ function on_logline(logline)
         process_id = tonumber(process_id:gsub("^0[xX]", ""), 16)
         set_field_value(logline, "event.process.id", process_id)
         set_field_value(logline, "initiator.command.info", command_info)
-        log("EXEC Command info: " .. command_info)
+        grouper1:feed(logline)
     elseif compare(event_id, "==", "4103") then
         local process_command = logline:gets("initiator.process.command"):lower()
         local process_id = logline:gets("observer.process.id")
         set_field_value(logline, "event.process.id", process_id)
         set_field_value(logline, "initiator.command.info", process_command)
-        log("Module Command info: " .. process_command)
+        grouper1:feed(logline)
     end
-    
-    grouper1:feed(logline)
-    
 end
 
 -- Функция сработки группера
@@ -75,10 +88,9 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_scriptblock = nil
     local log_exec = nil
-    local log_module = nil
+    local current_title = "Обнаружена проверка портов с помощью штатных или специальных утилит"
+--    local log_module = nil
     
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -88,17 +100,23 @@ function on_grouped(grouped)
             else
                 log_exec = event
             end
-
         end
 
-        if log_scriptblock and (log_exec or log_module) then
+        if log_scriptblock and log_exec then
             local initiator_name = log_exec:gets("initiator.user.name", "Пользователь не определен")  
             local host_ip = log_scriptblock:get("observer.host.ip") or log_scriptblock:get("reportchain.collector.host.ip")
             local host_name = log_scriptblock:gets("observer.host.hostname", "Имя узла не опредено")
             local host_fqdn = log_scriptblock:gets("observer.host.fqdn")
             local command_executed = log_scriptblock:gets("initiator.command.executed")
             local target_image = log_exec:get("target.image.name") or log_exec:get("target.process.path.full") or log_exec:get("initiator.process.command") or "Имя файла не определено"
-       
+            local command_name = log_scriptblock:get("initiator.command.info") or log_exec:get("initiator.command.info") 
+
+            for _, pattern in pairs(alert_titles) do
+                if command_name == pattern.image then
+                    current_title = pattern.title
+                end
+            end
+
             if #command_executed > 128 then
                  command_executed = command_executed:sub(1,128).. "..."
             end
@@ -110,7 +128,8 @@ function on_grouped(grouped)
                      command=command_executed,
                      path=target_image,
                      ip=host_ip,
-                     hostname=host_name
+                     hostname=host_name,
+                     title=current_title
                      },
                  risk_level = 7.0, 
                  asset_ip = host_ip,
