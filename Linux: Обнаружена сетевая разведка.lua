@@ -1,84 +1,82 @@
 local template = [[
     Обнаружена сетевая разведка.
     Узел: 
-    {{ if .First.observer.host.ip }}IP - "{{ .First.observer.host.ip }}"{{ else }}"IP-адрес неопределен"{{ end }}
-    {{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
+    IP - {{ or .Meta.ip "IP-адрес не определён" }}
+    Hostname - {{ .Meta.hostname }}
     Пользователь(инициатор): {{ .Meta.user_name }}
     Выполненная команда: {{ .Meta.command }}
-    Окружение, из которого выполнялась команда: {{ .Meta.command_path }}
+    Окружение, из которого выполнялась команда: {{ .Meta.path }}
+    Имя программы: {{ .Meta.image }}
+    Целевой узел: {{ .Meta.target_host }}
+    Целевой порт: {{ .Meta.port }}
 ]]
 
-local detection_window = "1m"
+local detection_window = "30s"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.event.id"}
 local aggregated_by = {"observer.event.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
-local process_pattern =
-    "(?i)(?:^|\\/|\\\\|\\\"|\\'|\\s+)(?:nmap|zmap|masscan|arp\\-scan|sslscan|netdiscover|arp\\s+\\-a|ip\\s+neigh\\s+show|nikto|dirb|nc|netcat|ping\\d?|hping\\d?|fping\\d?|traceroute|netstat|ss|knock)(?:\\s+|$|\\\"|\\')"
-local whitelist_pattern = "(?i)(?:\\.psf\\.gz|consolefonts)"
-
-local function analyze(cmd)
-    if cmd:search(whitelist_pattern) then
-        return false
-    end
-    return cmd:search(process_pattern)
-end
-
 function on_logline(logline)
-    local event_type = logline:gets("observer.event.type", "")
-
-    if event_type == "EXECVE" or event_type == "PROCTITLE" then
-        local command = logline:gets("initiator.command.executed", "")
-        if command ~= "" and analyze(command) then
-            grouper1:feed(logline)
-        end
-    elseif event_type == "SYSCALL" then
-        grouper1:feed(logline)
-    end
+    grouper1:feed(logline)
 end
 
 function on_grouped(grouped)
-    if grouped.aggregatedData.aggregated.total >= 1 then
-        local log_sys = nil
-        local log_exec = nil
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local log_sys = nil
+    local log_sockaddr = nil
+    local log_exec = nil
 
-        for _, event in ipairs(grouped.aggregatedData.loglines) do
-            local ev_type = event:gets("observer.event.type", "")
-            if ev_type == "SYSCALL" then
+    if unique_events > 2 then
+        for _, event in ipairs(events) do
+            local event_type = event:gets("observer.event.type")
+            if event_type == "SYSCALL" then
                 log_sys = event
-            elseif ev_type == "EXECVE" or ev_type == "PROCTITLE" then
+            elseif event_type == "EXECVE" or event_type == "PROCTITLE" then
                 log_exec = event
+            else 
+                log_sockaddr = event
             end
         end
 
-        if log_sys and log_exec then
-            local command = log_exec:gets("initiator.command.executed", "")
+        if log_sys and log_sockaddr and log_exec then
+            local command_executed = log_exec:gets("initiator.command.executed")
+            local initiator_name = log_sys:gets("initiator.user.name", "Пользователь не определен")  
+            local host_ip = log_sys:get("observer.host.ip") or log_sys:gets("reportchain.collector.host.ip")
+            local host_name = log_sys:gets("observer.host.hostname", "Имя узла не опредено")
+            local host_fqdn = log_sys:gets("observer.host.fqdn")
+            local target_image = log_sys:get("initiator.process.path.name") or log_sys:gets("initiator.process.path.full")
+            local target_host = log_sockaddr:gets("initiator.host.ip")
+            local target_port = log_sockaddr:gets("initiator.socket.port")
+            local command_path = log_sys:gets("initiator.process.path.full")
 
-            if command ~= "" and analyze(command) then
-                alert({
-                    template = template,
-                    meta = {
-                        user_name = log_sys:gets("initiator.user.name", "Не определен"),
-                        command = command,
-                        command_path = log_sys:gets("initiator.process.path.full", "Не определен")
-                    },
-                    risk_level = 9.0,
-                    asset_ip = log_exec:get_asset_data("observer.host.ip"),
-                    asset_hostname = log_exec:get_asset_data("observer.host.hostname"),
-                    asset_fqdn = log_exec:get_asset_data("observer.host.fqdn"),
-                    asset_mac = "",
-                    create_incident = true,
-                    incident_group = "Discovery",
-                    assign_to_customer = false,
-                    incident_identifier = log_exec:gets("observer.host.hostname", "unknown") .. "_network_recon",
-                    logs = grouped.aggregatedData.loglines,
-                    mitre = {"T1046"},
-                    trim_logs = 10
-                })
-            end
+            alert({
+                template = template,
+                meta = {
+                    user_name = initiator_name,
+                    command = command_executed,
+                    path = command_path,
+                    hostname=host_name,
+                    ip=host_ip,
+                    image=target_image,
+                    target_host=target_host,
+                    port=target_port    
+                },
+                risk_level = 9.0,
+                asset_ip = host_ip,
+                asset_hostname = host_name,
+                asset_fqdn = host_fqdn,
+                asset_mac = "",
+                create_incident = true,
+                incident_group = "Discovery",
+                assign_to_customer = false,
+                logs = events,
+                mitre = {"T1046"},
+                trim_logs = 10
+            })
+            
+            grouper1:clear()
         end
-
-        grouper1:clear()
     end
 end
 
