@@ -55,7 +55,7 @@ function on_logline(logline)
     elseif event_type == "EXECVE" then
         local cmd = logline:gets("initiator.command.executed")
         if analyze(cmd) then
-            set_field_value(logline, "event.process.id", logline:gets("observer.process.id"))
+            set_field_value(logline, "event.process.id", logline:gets("observer.event.id"))
             grouper2:feed(logline)
         end
     end
@@ -66,7 +66,8 @@ function on_grouped1(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_sys_execve, log_sys_vfork
     
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+--    log("Grouper #1")
+--    log("Events: " ..#events.. ". Unique events: " ..unique_events)
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -83,6 +84,9 @@ function on_grouped1(grouped)
             local observer_pid = log_sys_execve:gets("observer.event.id")
             set_field_value(log_sys_execve, "event.process.id", observer_pid)
             set_field_value(log_sys_vfork, "event.process.id", observer_pid)
+--            log("SYSLOG execve event PID: " .. log_sys_execve:gets("event.process.id"))
+--            log("SYSLOG vfork event PID: " .. log_sys_vfork:gets("event.process.id"))
+            
             grouper2:feed(log_sys_execve)
             grouper2:feed(log_sys_vfork)
             grouper1:clear()
@@ -96,13 +100,20 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_execve, log_vfork, log_syscall
 
+    log("Grouper #2")
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+
+    for _, event in ipairs(events) do
+       log("Event type: " .. event:gets("observer.event.type") .. ". Event process pid: " .. event:gets("event.process.id") ) 
+    end
+    
     if unique_events > 1 then
 
         for _, event in ipairs(events) do
-            local event_type = log:gets("observer.event.type")
+            local event_type = event:gets("observer.event.type")
                         
             if event_type == "SYSCALL" then
-                local syscall_name = log:gets("target.syscall.name"):lower()
+                local syscall_name = event:gets("target.syscall.name"):lower()
                 
                 if syscall_name == "vfork" then
                     log_vfork = event
@@ -121,7 +132,8 @@ function on_grouped2(grouped)
             local host_ip = log_execve:gets("observer.host.ip")
             local host_name = log_execve:gets("observer.host.hostname")
             local host_fqdn = log_execve:gets("observer.host.fqdn")
-            local parent_id = log_syscall:gets("")
+            local parent_pid = log_syscall:gets("initiator.process.parent.id")
+            local target_pid = log_syscall:gets("initiator.process.id")
                         
             alert({
                 template = template,
@@ -131,8 +143,8 @@ function on_grouped2(grouped)
                     user_name = initiator_name,
                     path = process_path,
                     command = command_executed,
-                    parent_pid = initiator_pid,
-                    child_pid = parent_pid
+                    parent_pid = parent_pid,
+                    child_pid = target_pid
                 },
                 risk_level = 7.5,
                 asset_ip = host_ip,
