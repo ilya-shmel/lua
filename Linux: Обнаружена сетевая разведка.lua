@@ -2,11 +2,11 @@ local template = [[
     Обнаружена сетевая разведка.
     Узел: 
     IP - {{ or .Meta.ip "IP-адрес не определён" }}
-    Hostname - {{ .Meta.hostname }}
-    Пользователь(инициатор): {{ .Meta.user_name }}
+    Hostname - {{ or .Meta.hostname "Имя узла не определено" }}
+    Пользователь(инициатор): {{ or .Meta.user_name "Имя пользователя не определно" }}
     Выполненная команда: {{ .Meta.command }}
-    Окружение, из которого выполнялась команда: {{ .Meta.path }}
-    Имя программы: {{ .Meta.image }}
+    Путь выполнения команды: {{ .Meta.path }}
+    Имя программы: {{ .Meta.program }}
     Целевой узел: {{ .Meta.target_host }}
     Целевой порт: {{ .Meta.port }}
 ]]
@@ -16,16 +16,27 @@ local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.even
 local aggregated_by = {"observer.event.type"}
 local grouped_time_field = "@timestamp,RFC3339"
 
+local pattern = "(?:^|\\/|\\s+|\"|\'|\\()(?:arp|map|scan|netdiscover|nikto|dirb|ip|n(et)?c(at)?|ping|traceroute|netstat|ss|knock)\\s+(?:\\/|\\s+|\"|\'|\\))?"
+
 function on_logline(logline)
-    grouper1:feed(logline)
+    local event_type = logline:gets("observer.event.type")
+    
+    if event_type == "EXECVE" or event_type == "PROCTITLE" then
+        local command_executed = logline:gets("initiator.command.executed")
+
+        if command_executed:search(pattern) then
+            grouper1:feed(logline)
+        end
+    else
+        grouper1:feed(logline)
+    end
+
 end
 
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_sys = nil
-    local log_sockaddr = nil
-    local log_exec = nil
+    local log_sys, log_sockaddr, log_exec
 
     if unique_events > 2 then
         for _, event in ipairs(events) do
@@ -41,14 +52,14 @@ function on_grouped(grouped)
 
         if log_sys and log_sockaddr and log_exec then
             local command_executed = log_exec:gets("initiator.command.executed")
-            local initiator_name = log_sys:gets("initiator.user.name", "Пользователь не определен")  
-            local host_ip = log_sys:get("observer.host.ip") or log_sys:gets("reportchain.collector.host.ip")
-            local host_name = log_sys:gets("observer.host.hostname", "Имя узла не опредено")
+            local initiator_name = log_sys:gets("initiator.user.name")  
+            local host_ip = log_sys:gets("observer.host.ip")
+            local host_name = log_sys:gets("observer.host.hostname")
             local host_fqdn = log_sys:gets("observer.host.fqdn")
-            local target_image = log_sys:get("initiator.process.path.name") or log_sys:gets("initiator.process.path.full")
             local target_host = log_sockaddr:gets("initiator.host.ip")
             local target_port = log_sockaddr:gets("initiator.socket.port")
             local command_path = log_sys:gets("initiator.process.path.full")
+            local program_name = command_path:match("[^/\\s]+$")
 
             alert({
                 template = template,
@@ -58,7 +69,7 @@ function on_grouped(grouped)
                     path = command_path,
                     hostname=host_name,
                     ip=host_ip,
-                    image=target_image,
+                    program=program_name,
                     target_host=target_host,
                     port=target_port    
                 },

@@ -1,10 +1,10 @@
 local template = [[
-Подозрение на маскировку процесса через SYSCALL vfork.
+Подозрение на маскировку процесса через SYSCALL vfork и SYSCALL clone.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{ or .Meta.ip "IP-адрес не определён" }}
 Хост: {{ or .Meta.hostname "Имя узла не определено" }}
-FQDN: {{.Meta.observer_fqdn}}
+FQDN: {{ or .Meta.observer_fqdn "FQDN узла не определено" }}
 
 ИНИЦИАТОР:
 Пользователь: {{.Meta.user_name}}
@@ -26,15 +26,13 @@ local aggregated_by2 = {"observer.event.type"}
 
 
 local grouped_time_field = "@timestamp,RFC3339"
-
+local prefix = "(?:^|\\/|\\s+|\"|\'|\\()"
+local suffix = "(?:$|\\/|\\s+|\"|\'|\\))"
 local suspicious_patterns = {   
-                                "[\\s\'\"(]+while\\s+true;(\\s+do(ne)?[\\s;:)]+){2}&[\'\";\\s]+\\w+\\s+\\$!\\s+[>]+\\s+[\\/\\w\\.]+;[\\s\\S]*?[$(\\s]+ps[-\\s\\w]+\\|\\s+grep[$(\\s]+[\\\\,\'\"\\.\\*\\[\\]\\s]+\\|\\s+awk\\s+[\'\"{}$\\s\\w]+\\|\\s+shuf[-\\w\\s);]+mount[-\\w\\s]+([\\/\\w$()\\.\\s]+){1,2}",
-                                "[-\\w\\/]+\\s+&\\s+(?:ps|lsof|ss|\\w+?top|pgrep|fuser|systemctl|uhide(-tcp))",
-                                "(ba)?sh\\s+-c\\s+(?:\\./[a-zA-Z0-9]{6,}|[a-zA-Z0-9/]{1,}\\s+\\||\\$\\{.*\\})",
-                                "\\./[a-zA-Z0-9]{8,}",
-                                "\\$\\([\\s\\S]*?\\)",
-                                "exec\\s+",
-                                ">\\s*/dev/null"
+                        prefix .. "while\\s+true;\\s*do\\s+[\\s\\S]*&\\s+\\w+\\s+\\$![\\s\\S]*ps[\\s\\S]*grep[\\s\\S]*awk[\\s\\S]*shuf[\\s\\S]*mount" .. suffix,
+                        prefix .. "[-\\w\\/]+\\s+&\\s+(?:ps|pgrep|lsof|ss|systemctl|[hia]?top|fuser|uhide)" .. suffix,
+                        prefix .. "sh\\s+-c\\s+(?:\\.\\w{6,}|\\w+\\s+[|&]|\\$\\{.*\\})" .. suffix,
+                        prefix .. "(?:\\./\\w{8,}|\\$\\([\\s\\S]*?\\)|exec\\s+|>\\s*/dev/null)" .. suffix
 }
 
 local function analyze(cmd)
@@ -66,9 +64,6 @@ function on_grouped1(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_sys_execve, log_sys_vfork
     
---    log("Grouper #1")
---    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local syscall_name = event:gets("target.syscall.name"):lower()
@@ -84,9 +79,6 @@ function on_grouped1(grouped)
             local observer_pid = log_sys_execve:gets("observer.event.id")
             set_field_value(log_sys_execve, "event.process.id", observer_pid)
             set_field_value(log_sys_vfork, "event.process.id", observer_pid)
---            log("SYSLOG execve event PID: " .. log_sys_execve:gets("event.process.id"))
---            log("SYSLOG vfork event PID: " .. log_sys_vfork:gets("event.process.id"))
-            
             grouper2:feed(log_sys_execve)
             grouper2:feed(log_sys_vfork)
             grouper1:clear()
@@ -100,13 +92,6 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_execve, log_vfork, log_syscall
 
-    log("Grouper #2")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-
-    for _, event in ipairs(events) do
-       log("Event type: " .. event:gets("observer.event.type") .. ". Event process pid: " .. event:gets("event.process.id") ) 
-    end
-    
     if unique_events > 1 then
 
         for _, event in ipairs(events) do
@@ -134,7 +119,11 @@ function on_grouped2(grouped)
             local host_fqdn = log_execve:gets("observer.host.fqdn")
             local parent_pid = log_syscall:gets("initiator.process.parent.id")
             local target_pid = log_syscall:gets("initiator.process.id")
-                        
+            
+            if #command_executed > 255 then
+                command_executed = command_executed:sub(1,255) .. "... "
+            end
+
             alert({
                 template = template,
                 meta = {
