@@ -62,25 +62,26 @@ end
 function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_sys_execve, log_sys_vfork
+    local log_sys_execve, log_sys_masq
     
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local syscall_name = event:gets("target.syscall.name"):lower()
-                
+
             if syscall_name == "execve" then
                 log_sys_execve = event
             else
-                log_sys_vfork = event
+                log_sys_masq = event
             end
         end
 
-        if log_sys_execve and log_sys_vfork then
+        if log_sys_execve and log_sys_masq then
             local observer_pid = log_sys_execve:gets("observer.event.id")
             set_field_value(log_sys_execve, "event.process.id", observer_pid)
-            set_field_value(log_sys_vfork, "event.process.id", observer_pid)
+            set_field_value(log_sys_masq, "event.process.id", observer_pid)
             grouper2:feed(log_sys_execve)
-            grouper2:feed(log_sys_vfork)
+            grouper2:feed(log_sys_masq)
             grouper1:clear()
         end
 
@@ -90,7 +91,7 @@ end
 function on_grouped2(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_execve, log_vfork, log_syscall
+    local log_execve, log_masq, log_syscall
 
     if unique_events > 1 then
 
@@ -100,8 +101,8 @@ function on_grouped2(grouped)
             if event_type == "SYSCALL" then
                 local syscall_name = event:gets("target.syscall.name"):lower()
                 
-                if syscall_name == "vfork" then
-                    log_vfork = event
+                if syscall_name == "vfork" or syscall_name == "clone" then
+                    log_masq = event
                 else
                     log_syscall = event
                 end
@@ -110,10 +111,10 @@ function on_grouped2(grouped)
             end
         end
 
-        if log_execve and log_vfork and log_syscall then
+        if log_execve and log_masq and log_syscall then
             local command_executed = log_execve:gets("initiator.command.executed")
-            local process_path = log_vfork:gets("initiator.process.path.full")
-            local initiator_name = log_vfork:gets("initiator.user.name", "Имя пользователя не определено")
+            local process_path = log_masq:gets("initiator.process.path.full")
+            local initiator_name = log_masq:gets("initiator.user.name", "Имя пользователя не определено")
             local host_ip = log_execve:gets("observer.host.ip")
             local host_name = log_execve:gets("observer.host.hostname")
             local host_fqdn = log_execve:gets("observer.host.fqdn")
