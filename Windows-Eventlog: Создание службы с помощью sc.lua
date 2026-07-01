@@ -34,7 +34,16 @@ function on_logline(logline)
     
     local is_task = command_executed:search(pattern)
 
-    if is_task then grouper1:feed(logline) end
+    if is_task then 
+        local parent_id = tostring(logline:gets("initiator.process.parent.id")):match("^0x%w+")
+
+        if parent_id then
+            parent_id = tonumber(parent_id:gsub("^0[xX]", ""), 16)
+            set_field_value(logline, "initiator.process.parent.id", parent_id)
+        end
+
+        grouper1:feed(logline) 
+    end
     
 end
 
