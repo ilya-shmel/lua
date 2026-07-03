@@ -7,7 +7,7 @@ IP-адрес: {{ or .Meta.host_ip "IP-адрес узла не определё
 Имя узла: {{ or .Meta.hostname "Имя узла не определено" }}
 Пользователь (инициатор): {{ or .Meta.user_name "Имя пользователя не определено" }}
 Команда-инициатор: {{ .Meta.initiator_command }}
-Команда в задаче: {{ .Meta.target_command }}
+Команда внутри службы: {{ .Meta.target_command }}
 Запускающая команда: {{ .Meta.program }}
 Имя службы: {{ .Meta.service }}  
 ]]
