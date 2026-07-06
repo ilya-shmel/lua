@@ -1,6 +1,6 @@
 -- Шаблон алерта
 local template = [[
-{{ Meta.title }}.
+{{ .Meta.title }}.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{ or .Meta.ip "IP-адрес не определён" }}
@@ -20,7 +20,7 @@ FQDN: {{ or .Meta.observer_fqdn "FQDN узла не определено" }}
 -- Параметры группера
 local detection_window = "30s"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn"}
-local aggregated_by = {"target.syscall.name"}
+local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
@@ -37,7 +37,7 @@ local patterns = {
     },
     WMIC = {
         short_pattern = "wmic",
-        main_pattern = [[ "?[^"]*wmic(?:\.exe)?"?\s+shadowcopy\s+(?:call\s+create|delete|list)(?:\/|\s+|"|')[\s\S]* ]],
+        main_pattern = [["?[^"]*wmic(?:\.exe)?"?\s+shadowcopy\s+(?:call\s+create|delete|list)(?:\/|\s+|"|')[\s\S]*]],
         name = "Обнаружено использование WMIC для создания, удаления или перечисления теневых копий Volume Shadow Copy"
     }
 }
@@ -54,9 +54,13 @@ end
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd)
     local cmd = cmd:lower()
-    for _, pattern in ipairs(patterns) do
+    log("String: " .. cmd)
+    for _, pattern in pairs(patterns) do
         if substr(cmd, pattern.short_pattern) then
-            if cmd:sarch(pattern.main_pattern) then
+            log("Found short pattern: " .. pattern.short_pattern)
+            log("Searching pattern: " .. pattern.main_pattern)
+            log("Analyze result: " .. tostring(cmd:search(pattern.main_pattern)))
+            if cmd:search(pattern.main_pattern) then
                 local title = pattern.name
                 return title, true
             end
@@ -88,6 +92,10 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_service
     
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    log("Event ID: " .. tostring(events[1]:gets("observer.event.id")))
+    log("Event ID: " .. tostring(events[2]:gets("observer.event.id")))
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             if compare(event:gets("observer.event.id"), "==", "4688") then
