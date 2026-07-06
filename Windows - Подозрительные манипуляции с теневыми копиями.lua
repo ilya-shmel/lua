@@ -26,17 +26,17 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Регулярные выражения
 local patterns = {
     VSSADMIN = {
-        short_pattern = "vssadmin"
+        short_pattern = "vssadmin",
         main_pattern = [["[^"]*vssadmin(?:\.exe)?"?\s+(?:create\s+shadow|delete\s+shadows|list\s+shadows)\b.*]],
         name = "Обнаружено создание, удаление или перечисление теневых копий Volume Shadow Copy"
     },
     DISKSHADOW = {
-        short_pattern = "diskshadow"
+        short_pattern = "diskshadow",
         main_pattern = [["?[^"]*diskshadow(?:\.exe)?"?\s*(?:\/s\s+\S+|.*\b(create|expose|delete|list)\b.*)]],
         name = "Обнаружено использование DiskShadow для управления теневыми копиями Volume Shadow Copy"
     },
     WMIC = {
-        short_pattern = "wmic"
+        short_pattern = "wmic",
         main_pattern = [[ "?[^"]*wmic(?:\.exe)?"?\s+shadowcopy\s+(?:call\s+create|delete|list)(?:\/|\s+|"|')[\s\S]* ]],
         name = "Обнаружено использование WMIC для создания, удаления или перечисления теневых копий Volume Shadow Copy"
     }
@@ -69,10 +69,8 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local title
-    local event_id = logline:gets("observer.event.id")
 
-
-    if compare(event_id, "==", "4688") then
+    if compare(logline:gets("observer.event.id"), "==", "4688") then
         title, is_vss = analyze(logline:gets("initiator.command.executed"))
 
         if is_vss then
@@ -84,8 +82,8 @@ function on_logline(logline)
     end
 end
 
--- Функция группера #1
-function on_grouped1(grouped)
+-- Функция группера
+function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_service
@@ -138,6 +136,7 @@ function on_grouped1(grouped)
             )
             grouper1:clear()
         end
-
     end
 end
+
+grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)

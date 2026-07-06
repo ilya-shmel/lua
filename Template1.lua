@@ -57,7 +57,7 @@ function on_logline(logline)
 end
 
 -- Функция группера #1
-function on_grouped1(grouped)
+function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_1, log_2
@@ -116,5 +116,5 @@ function on_grouped1(grouped)
     end
 end
 
-
+grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
 
