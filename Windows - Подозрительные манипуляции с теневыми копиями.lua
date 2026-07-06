@@ -12,7 +12,7 @@ FQDN: {{ or .Meta.observer_fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Путь к имполняемому файлу: {{ .Meta.path }}
+Путь к исполняемому файлу: {{ .Meta.path }}
 Имя службы: {{ .Meta.service }}
 Статус задачи: {{ .Meta.status }}
 ]]
@@ -27,18 +27,23 @@ local grouped_time_field = "@timestamp,RFC3339"
 local patterns = {
     VSSADMIN = {
         short_pattern = "vssadmin",
-        main_pattern = [["[^"]*vssadmin(?:\.exe)?"?\s+(?:create\s+shadow|delete\s+shadows|list\s+shadows)\b.*]],
+        main_pattern = [["?[^"]*vssadmin(?:\.exe)?"?\s+(?:create\s+shadow|(?:delete|list)\s+shadows)(?:\/|\s+|"|')[\s\S]*]],
         name = "Обнаружено создание, удаление или перечисление теневых копий Volume Shadow Copy"
     },
     DISKSHADOW = {
         short_pattern = "diskshadow",
-        main_pattern = [["?[^"]*diskshadow(?:\.exe)?"?\s*(?:\/s\s+\S+|.*\b(create|expose|delete|list)\b.*)]],
+        main_pattern = [["?[^"]*diskshadow(?:\.exe)?"?\s*(?:\/s\s+\S+|[\s\S]*(?:\/|\s+|"|')(create|expose|delete|list)(?:\/|\s+|"|')[\s\S]*)]],
         name = "Обнаружено использование DiskShadow для управления теневыми копиями Volume Shadow Copy"
     },
     WMIC = {
         short_pattern = "wmic",
-        main_pattern = [["?[^"]*wmic(?:\.exe)?"?\s+shadowcopy\s+(?:call\s+create|delete|list)(?:\/|\s+|"|')[\s\S]*]],
+        main_pattern = [["?[^"]*wmic(?:\.exe)?"?(\s+\/node:[^:]+)?\s+shadowcopy\s+(?:call\s+create|delete|list)(?:\/|\s+|"|')[\s\S]*]],
         name = "Обнаружено использование WMIC для создания, удаления или перечисления теневых копий Volume Shadow Copy"
+    },
+    GMI = {
+        short_pattern = "gwmi",
+        main_pattern = [[(?:\/|\s+|"|'|\()gwmi\s+-list[^)]+\)\.create\(['"]?\w:\\['"],['"]?\w+['"]\)(?:\/|\s+|"|'|\))]],
+        name = "Обнаружено использование PowerShell (GWMI) для создания, удаления или перечисления теневых копий Volume Shadow Copy"
     }
 }
 
@@ -93,8 +98,10 @@ function on_grouped(grouped)
     local log_exec, log_service
     
     log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    log("Event ID: " .. tostring(events[1]:gets("observer.event.id")))
-    log("Event ID: " .. tostring(events[2]:gets("observer.event.id")))
+    
+    for _, event in ipairs(events) do
+        log("Event ID: " .. tostring(event:gets("observer.event.id")))
+    end
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -112,7 +119,7 @@ function on_grouped(grouped)
             local host_fqdn = log_exec:gets("observer.host.fqdn")
             local service_name = log_service:gets("target.service.name")
             local command_executed = string_cut(log_exec:gets("initiator.command.executed"))
-            local process_path = log_exec:gets("target.process.path.full")
+            local process_path = log_exec:gets("initiator.process.parent.path.original")
             local task_status = log_service:gets("target.task.status.name")
             local description = log_exec:gets("event.rule.description")
 
