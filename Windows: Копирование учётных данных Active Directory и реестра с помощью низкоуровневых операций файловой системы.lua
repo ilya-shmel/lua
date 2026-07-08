@@ -71,6 +71,10 @@ function on_grouped(grouped)
     local log_scriptblock, log_module, log_file
     
     log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    
+    for _, event in ipairs(events) do
+	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
+    end
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
