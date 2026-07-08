@@ -12,7 +12,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Процесс/Путь к имполняемому файлу: {{ .Meta.path }}
+Процесс/Путь к исполняемому файлу: {{ .Meta.path }}
 Скопированный файл: {{ .Meta.source_file }}
 Целевой файл: {{ .Meta.destination_file }}
 ]]
@@ -30,16 +30,6 @@ local grouped_by2 = {"observer.host.ip", "observer.host.hostname", "observer.hos
 local copy_pattern = [[[^\s]+\s+-\w+\s+m(?:ft|etadata)\s+-[^\s]+\s+(c:\\windows\\(([^\\-])+\\?)+)\s+-[^\s]+\s+\w:\\(([^\\-])+\\?)+]]
 local link_pattern = [[(?:^|\/|\s+|"|'|\()mklink\s+\/d\s+\w:(\\[^\\]+)+\s+[^\w]+globalroot\\[\s\S]*]]
 
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
 -- Функция алерта
 local function alert_function(events, ip, hostname, fqdn, user, cmd, path, source, destination)
     alert({
@@ -51,7 +41,8 @@ local function alert_function(events, ip, hostname, fqdn, user, cmd, path, sourc
             source_file=source,
             destination_file=destination,
             ip=ip,
-            hostname=hostname
+            hostname=hostname,
+            fqdn=fqdn
             },
         risk_level = 7.0, 
         asset_ip = ip,
@@ -76,7 +67,6 @@ local function send_to_grouper(event, event_type)
     else
         local access_mask = event:gets("initiator.permissions.requested.access_mask")
         if compare(access_mask, "==", "0x10000") then
---            log("Sending 4663 to Grouper2...")
             grouper2:feed(event)
             return
         else        
@@ -132,8 +122,6 @@ function on_grouped1(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_scriptblock, log_module, log_file
     
---    log_grouper(events, #events, unique_events, "on_grouped1")
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -169,8 +157,6 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_file
     
-    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
