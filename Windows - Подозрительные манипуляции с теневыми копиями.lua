@@ -47,7 +47,7 @@ local patterns = {
     }
 }
 
--- Функция сокразения строки для алерта
+-- Функция сокращения строки для алерта
 local function string_cut(cmd)
     if #cmd > 128 then
         cmd = cmd:sub(1, 128).. "... "
@@ -59,12 +59,9 @@ end
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd)
     local cmd = cmd:lower()
-    log("String: " .. cmd)
+
     for _, pattern in pairs(patterns) do
         if substr(cmd, pattern.short_pattern) then
-            log("Found short pattern: " .. pattern.short_pattern)
-            log("Searching pattern: " .. pattern.main_pattern)
-            log("Analyze result: " .. tostring(cmd:search(pattern.main_pattern)))
             if cmd:search(pattern.main_pattern) then
                 local title = pattern.name
                 return title, true
@@ -97,12 +94,6 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_service
     
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-        log("Event ID: " .. tostring(event:gets("observer.event.id")))
-    end
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             if compare(event:gets("observer.event.id"), "==", "4688") then
