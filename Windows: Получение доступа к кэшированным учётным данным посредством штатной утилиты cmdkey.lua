@@ -25,17 +25,6 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Регулярные выражения
 local suspicious_pattern = [[(?:^|\/|\s+|"|'|\()cmdkey(\.exe)?\s+\/?list]]
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
 -- Функция алерта
 local function alert_function(events, ip, hostname, fqdn, user, cmd, program, path)
     alert({
@@ -89,8 +78,6 @@ function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local first_event = events[1]
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
     if #events > 0 then
         local initiator_name = first_event:gets("initiator.user.name")  
         local host_ip = first_event:get("observer.host.ip")
