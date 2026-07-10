@@ -28,7 +28,50 @@ local suspicious_patterns = {
                         
 }
 
--- Функция сокразения строки для алерта
+-- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
+local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
+    log("### " .. grouper_name .. " ###")
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    
+    for _, event in ipairs(events) do
+	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
+        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
+    end    
+end
+
+-- Функция алерта
+local function alert_function(events, ip, hostname, fqdn, user, cmd, program, service, path, source, destination)
+    alert({
+        template = template,
+        meta = {
+            user=user,
+            command=cmd,
+            path=path,
+            program=program,
+            service=service,
+            source_file=source,
+            destination_file=destination,
+            ip=ip,
+            hostname=hostname,
+            fqdn=fqdn
+            },
+        risk_level = 4.0, 
+        asset_ip = ip,
+        asset_hostname = hostname,
+        asset_fqdn = fqdn,
+        asset_mac = "",
+        create_incident = true,
+        incident_group = "",
+        assign_to_customer = false,
+        incident_identifier = "",
+        logs = events,
+        mitre = {"T1003.004"},
+        trim_logs = 10
+        }
+     )
+end
+
+-- Функция сокращения строки для алерта
 local function string_cut(cmd)
     if #cmd > 128 then
         cmd = cmd:sub(1, 128).. "... "
@@ -62,6 +105,8 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_1, log_2
     
+--    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local parameter = event:gets("..."):lower()
@@ -79,37 +124,10 @@ function on_grouped(grouped)
             local host_name = log_2:gets("observer.host.hostname")
             local host_fqdn = log_2:gets("observer.host.fqdn")
             local program_name = log_1:gets("target.image.name")
-            local command_executed = log_2:gets("initiator.command.executed")
+            local command_executed = string_cut(log_2:gets("initiator.command.executed"))
             local process_path = log_2:get("target.process.path.full")
 
-            if #command_executed > 255 then
-                command_executed = command_executed:sub(1,255) .. "... "
-            end
-                        
-            alert({
-               template = template,
-               meta = {
-                   user=initiator_name,
-                   initiator_command=command_executed,
-                   path=process_path,
-                   program=program_name,
-                   ip=host_ip,
-                   hostname=host_name
-                   },
-               risk_level = 4.0, 
-               asset_ip = host_ip,
-               asset_hostname = host_name,
-               asset_fqdn = host_fqdn,
-               asset_mac = "",
-               create_incident = true,
-               incident_group = "",
-               assign_to_customer = false,
-               incident_identifier = "",
-               logs = events,
-               mitre = {"T1036.004"},
-               trim_logs = 10
-               }
-            )
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, service_name, process_path, source_path, output_path)
             grouper1:clear()
         end
 

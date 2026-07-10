@@ -17,7 +17,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 Служба: {{ .Meta.service }}
 Имя программы: {{ .Meta.program }}
 Исходный объект: {{ .Meta.source_file }}
-Результирующий объект: {{ .Meta.destination_file }}
+Результирующий объект: {{ or .Meta.destination_file "Неприменимо" }}
 ]]
 
 -- Параметры группера
@@ -31,17 +31,39 @@ local reg_pattern = [[(?:^|\/|\s+|"|'|\|)reg(?:\/|\s+|"|'|)\s+save\s+hk\w+(\\[^\
 local iex_pattern = [[(?:^|\/|\s+|"|'|\|)(?:iex|invoke-expression)\s+\([^)]+\)\.[^(]+\(['"]?[\s\S]*\.ps(?:1|m)['"]?\)]]
 local member_pattern = [[@\{((?:username|domain|logonid|usersid|authenticationpackage|logontype|logontime|logonserverdnsdomain)=[^;]*(;\s+)?)+\}]] 
 
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
+-- Функция алерта
+local function alert_function(events, ip, hostname, fqdn, user, cmd, program, service, path, source, destination)
+    alert({
+        template = template,
+        meta = {
+            user=user,
+            command=cmd,
+            path=path,
+            program=program,
+            service=service,
+            source_file=source,
+            destination_file=destination,
+            ip=ip,
+            hostname=hostname,
+            fqdn=fqdn
+            },
+        risk_level = 4.0, 
+        asset_ip = ip,
+        asset_hostname = hostname,
+        asset_fqdn = fqdn,
+        asset_mac = "",
+        create_incident = true,
+        incident_group = "",
+        assign_to_customer = false,
+        incident_identifier = "",
+        logs = events,
+        mitre = {"T1003.004"},
+        trim_logs = 10
+        }
+     )
 end
 
--- Функция сокразения строки для алерта
+-- Функция сокращения строки для алерта
 local function string_cut(cmd)
     if #cmd > 256 then
         cmd = cmd:sub(1, 256).. "... "
@@ -64,8 +86,6 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
-
---    log("EventID: " .. tostring(event_id))
 
     if compare(event_id, "==", "4688") then
         local command_executed = logline:gets("initiator.command.executed"):lower()
@@ -96,11 +116,10 @@ function on_grouped1(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_service, log_file
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
+            
             if compare (event_id, "==", "4688") then
                 local target_image = event:gets("target.image.name"):lower()
 
@@ -116,7 +135,6 @@ function on_grouped1(grouped)
 
         if log_exec and log_service and log_file then
             local initiator_name = log_exec:gets("initiator.user.name")  
-            local executor_name = log_service:gets("initiator.user.name")
             local host_ip = log_exec:gets("observer.host.ip")
             local host_name = log_exec:gets("observer.host.hostname")
             local host_fqdn = log_exec:gets("observer.host.fqdn")
@@ -127,36 +145,43 @@ function on_grouped1(grouped)
             local output_path = log_file:gets("target.object.name")
             local source_path = command_executed:match("save%s+([%s%S]*)%s+%a:")
 
-            alert({
-               template = template,
-               meta = {
-                   user=initiator_name,
-                   executor=executor_name,
-                   command=command_executed,
-                   path=process_path,
-                   program=program_name,
-                   service=service_name,
-                   source_file=source_path,
-                   destination_file=output_path,
-                   ip=host_ip,
-                   hostname=host_name,
-                   fqdn=host_fqdn
-                   },
-               risk_level = 4.0, 
-               asset_ip = host_ip,
-               asset_hostname = host_name,
-               asset_fqdn = host_fqdn,
-               asset_mac = "",
-               create_incident = true,
-               incident_group = "",
-               assign_to_customer = false,
-               incident_identifier = "",
-               logs = events,
-               mitre = {"T1003.004"},
-               trim_logs = 10
-               }
-            )
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, service_name, process_path, source_path, output_path)
             grouper1:clear()
+      end
+    end
+end
+
+-- Функция группера #2
+function on_grouped2(grouped)
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local log_scriptblock, log_module
+    
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            local event_id = event:gets("observer.event.id")
+            
+            if compare (event_id, "==", "4104") then
+                log_scriptblock = event
+            else
+                log_module = event
+            end
+        end
+
+        if log_scriptblock and log_module then
+            local initiator_name = log_module:gets("initiator.user.name")  
+            local host_ip = log_scriptblock:gets("observer.host.ip")
+            local host_name = log_scriptblock:gets("observer.host.hostname")
+            local host_fqdn = log_scriptblock:gets("observer.host.fqdn")
+            local program_name = log_module:gets("target.image.name")
+            local command_executed = string_cut(log_scriptblock:gets("initiator.command.executed"))
+            local process_path = log_module:gets("initiator.process.command")
+            local service_name = log_module:gets("observer.service.name")
+            local script_name = command_executed:match("/([^/]*%.ps%w+)[%)\'\"%s]+")
+            local object_name = log_module:gets("target.object.name")
+
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, script_name, service_name, process_path, script_name, object_name)
+            grouper2:clear()
         end
 
     end
