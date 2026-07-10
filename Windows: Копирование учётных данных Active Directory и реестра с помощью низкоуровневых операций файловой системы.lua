@@ -4,7 +4,7 @@ local template = [[
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{ or .Meta.ip "IP-адрес не определён" }}
-Хост: {{ or .Meta.hostname "Имя узла не определено" }}
+Узел: {{ or .Meta.hostname "Имя узла не определено" }}
 FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ИНИЦИАТОР:
