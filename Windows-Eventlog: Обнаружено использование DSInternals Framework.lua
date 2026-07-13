@@ -23,17 +23,6 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Регулярные выражения
 local dsinternals_pattern = [[(?:^|\/|\s+|"|'|\()get-adreplaccount\s+-[^-]*-server\s+[\s\S]*]]
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
 -- Функция алерта
 local function alert_function(events, ip, hostname, fqdn, user, cmd)
     alert({
@@ -94,8 +83,6 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_scriptblock, log_module
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
