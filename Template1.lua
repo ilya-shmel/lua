@@ -137,3 +137,19 @@ end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
 
+---------------------------------------------------------------------------------------------------
+
+-- Функция обработки логлайна для двух событий EventID 4104 и 4103
+function on_logline(logline)
+    local event_id = logline:gets("observer.event.id")
+
+    if compare(event_id, "==", "4104") then
+        local command_executed = logline:gets("initiator.command.executed")
+        
+        if command_executed:search(suspicious_pattern) then
+            grouper1:feed(logline)
+        end
+    else
+        grouper1:feed(logline)
+    end
+end
