@@ -12,8 +12,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Имя программы: {{ .Meta.program }}
-Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Имя командлета/программы: {{ .Meta.program }}
 Целевой объект: {{ .Meta.object }}
 Имя диска/файла: {{ .Meta.disk }}
 Выполняемые операции: {{ .Meta.operation }}
@@ -26,7 +25,7 @@ local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
-local suspicious_pattern = [[(?:^|\s+|\\|\/|"|')(?:(?:IO\.FileStream|CreateFile)[\s\S]*['"]\\\\\.\\\w:['"]|(?:rawcopy|osfmount|diskshadow|win32_shadowcopy[\s\S]*\.create|vssadmin\s+(?:create|list)\s+shadows?|wbadmin\s+start\s+(?:backup|recovery))(?:\s+|\\|\/|"|'|\(|$))]]
+local suspicious_pattern = [[(?:^|\s+|\\|\/|"|')(?:(?:io\.filestream|createfile)[\s\S]*['"]\\\\\.\\\w:['"]|(?:rawcopy|osfmount|diskshadow|win32_shadowcopy[\s\S]*\.create|vssadmin\s+(?:create|list)\s+shadows?|wbadmin\s+start\s+(?:backup|recovery))(?:\s+|\\|\/|"|'|\(|$))]]
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
 local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
@@ -38,15 +37,23 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
         log("Grouper field: " .. tostring(event:gets(grouper_field))) 
     end    
 end
-alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path, target_object, disk_name, operation_name)
+
+-- Вспомогательная функция логирования значений в функции on_logline
+local function log_on_logline(event)
+    log("###  on_logline  ###")
+    log("Event ID: " .. tostring(event:gets("observer.event.id")))
+    log("Command: " .. event:gets("initiator.command.executed"):lower())
+    log("Pattern: " .. suspicious_pattern)
+    log("Regex result: " .. tostring(event:gets("initiator.command.executed"):lower():search(suspicious_pattern)))
+end
+
 -- Функция алерта
-local function alert_function(events, ip, hostname, fqdn, user, cmd, program, path, object, disk, operation)
+local function alert_function(events, ip, hostname, fqdn, user, cmd, program, object, disk, operation)
     alert({
         template = template,
         meta = {
             user=user,
             command=cmd,
-            path=path,
             program=program,
             object=object,
             disk=disk,
@@ -82,6 +89,7 @@ end
 
 -- Функция обработки логлайна
 function on_logline(logline)
+--    log_on_logline(logline)
     local event_id = logline:gets("observer.event.id")
 
     if compare(event_id, "==", "4104") then
@@ -119,14 +127,13 @@ function on_grouped(grouped)
             local host_ip = log_scriptblock:get("observer.host.ip")
             local host_name = log_scriptblock:gets("observer.host.hostname")
             local host_fqdn = log_scriptblock:gets("observer.host.fqdn")
-            local program_name = log_module:gets("target.image.name")
+            local comandlet = log_module:gets("initiator.process.command")
             local command_executed = string_cut(log_scriptblock:gets("initiator.command.executed"))
-            local process_path = log_scriptblock:gets("target.process.path.full")
             local target_object = log_module:gets("target.object.name")
-            local disk_name = log_module:gets("target.object.path.name")
-            local operation_name = log_module:gets("initiator.operation.name")
+            local disk_name = log_module:get("target.object.path.name") or command_executed:match("[\'\"]?\\%.\\(%a:)[\'\"]?,")
+            local operation_name = log_module:get("initiator.operation.name") or command_executed:match("%.\\%a:[\'\"]?,%s*([%s%S]-);"):gsub("'", "")
 
-            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path, target_object, disk_name, operation_name)
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, comandlet, target_object, disk_name, operation_name)
             grouper1:clear()
         end
 
