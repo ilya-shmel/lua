@@ -25,14 +25,13 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Регулярные выражения
 local service_patterns = {   
     SERVICE_LIST = {
-        pattern = [[(?:^|\/|\s+|"|'|\()(?:sc(\.exe)\s+query|tasklist(\.exe))(?:$|\/|\s+|"|'|\))(?:state=[\s\S]*|\/svc)?]],
+        pattern = [[(?:^|\/|\s+|"|'|\()(?:sc(\.exe)?\s+query|tasklist(\.exe)?)(?:$|\/|\s+|"|'|\))(?:state=[\s\S]*|\/svc)?]],
         name = "system service discovery"
     },
     
-    DULL = {
-        pattern = [[(?:^|\/|\s+|"|'|\()dull(?:$|\/|\s+|"|'|\))]],
-        name = "dull"
-    }
+    NET_EXE = {
+        pattern = [[(?:^|\/|\s+|"|'|\()net(\.exe)?(?:$|\/|\s+|"|'|\))start([\s>]+\w:(\\?[^\\]+)*\.\w{1,5})?]],
+        }
 }
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
@@ -45,6 +44,16 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
         log("Grouper field: " .. tostring(event:gets(grouper_field)) .. " ; " .. tostring(event:gets("event.rule.description")))
         log("Command executed: " .. event:gets("initiator.command.executed")) 
     end    
+end
+
+-- Проверка на случай, если в событии вместо строки указано `[]`, или `{}`, или элемент принимает тип "Таблица"
+local function check_empty_field(field)
+    if field == "[]" or field == "{}" or field == "" or field:match("table:") then
+        field = "Не определен"
+        return field
+    end
+    
+    return nil
 end
 
 -- Функция сортировки таблиц
@@ -144,7 +153,7 @@ function on_grouped(grouped)
     local target_images = {}
     local paths = {}
     
-    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+--    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
