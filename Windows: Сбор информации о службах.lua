@@ -1,5 +1,5 @@
 -- Шаблон алерта
-local template = [[
+local template1 = [[
 Обнаружен сбор информации о службах.
 
 ЦЕЛЕВОЙ УЗЕЛ:
@@ -16,11 +16,33 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
 ]]
 
+local template2 = [[
+Обнаружен сбор информации о службах.
+
+ЦЕЛЕВОЙ УЗЕЛ:
+IP: {{ or .Meta.ip "IP-адрес не определён" }}
+Узел: {{ or .Meta.hostname "Имя узла не определено" }}
+FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
+
+ИНИЦИАТОР:
+Пользователь: {{ or .Meta.user "Пользователь не определён"}}
+
+ВЫПОЛНЕННАЯ КОМАНДА:
+{{ .Meta.command }}
+Имя программы: {{ .Meta.program }}
+Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Родительский процесс: {{ .Meta.parent }}
+Результирующий файл: {{ or .Meta.file "Имя файла не определно" }}
+]]
+
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "initiator.process.parent.id", "event.rule.description"}
-local aggregated_by = {"target.image.name"}
 local grouped_time_field = "@timestamp,RFC3339"
+
+local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "initiator.process.parent.id", "event.rule.description"}
+local aggregated_by1 = {"target.image.name"}
+local grouped_by2 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.process.id"}
+local aggregated_by2 = {"observer.event.id"}
 
 -- Регулярные выражения
 local service_patterns = {   
@@ -30,7 +52,7 @@ local service_patterns = {
     },
     
     NET_EXE = {
-        pattern = [[(?:^|\/|\s+|"|'|\()net(\.exe)?(?:$|\/|\s+|"|'|\))start([\s>]+\w:(\\?[^\\]+)*\.\w{1,5})?]],
+        pattern = [[(?:^|\/|\s+|"|'|\()net(\.exe)?(?:$|\/|\s+|"|'|\))start([\s>]+\w:(\\?[^\\]+)*\.\w{1,5})?]]
         }
 }
 
@@ -41,7 +63,7 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
     
     for _, event in ipairs(events) do
 	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field)) .. " ; " .. tostring(event:gets("event.rule.description")))
+        log("Grouper field: " .. tostring(event:gets(grouper_field)))
         log("Command executed: " .. event:gets("initiator.command.executed")) 
     end    
 end
@@ -76,9 +98,8 @@ local function get_unique_elements(input_array)
 
     return result_table
 end
-
 -- Функция алерта
-local function alert_function(events, ip, hostname, fqdn, user, cmd, program, parent, path)
+local function alert_function(template, events, ip, hostname, fqdn, user, cmd, program, parent, path, file)
     alert({
         template = template,
         meta = {
@@ -87,6 +108,7 @@ local function alert_function(events, ip, hostname, fqdn, user, cmd, program, pa
             path=path,
             program=program,
             parent=parent,
+            file=file,
             ip=ip,
             hostname=hostname,
             fqdn=fqdn
@@ -140,12 +162,20 @@ function on_logline(logline)
                 set_field_value(logline, "event.rule.description", service_patterns.SERVICE_LIST.name)
                 grouper1:feed(logline)
             end
+        elseif image_name == "net.exe" or image_name == "cmd.exe" then
+            if analyze(command_executed, service_patterns.NET_EXE.pattern) then
+                set_field_value(logline, "event.process.id", logline:gets("target.process.id"))
+                grouper2:feed(logline)
+            end
         end
+    elseif compare(event_id, "==", "4663") then
+        set_field_value(logline, "event.process.id", logline:gets("initiator.process.id"))
+        grouper2:feed(logline)
     end
 end
 
 -- Функция группера #1
-function on_grouped(grouped)
+function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local first_event = events[1]
@@ -153,7 +183,7 @@ function on_grouped(grouped)
     local target_images = {}
     local paths = {}
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+--    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -175,11 +205,46 @@ function on_grouped(grouped)
             local program_name = table.concat(get_unique_elements(target_images), "; ")
             local target_path = table.concat(get_unique_elements(paths), "; ")
 
-            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, initiator_path, target_path)
+            alert_function(template1, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, initiator_path, target_path)
             grouper1:clear()
         end
 
     end
 end
 
-grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
+function on_grouped2(grouped)
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local log_exec, log_file    
+--    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
+
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            if compare(event:gets("observer.event.id"), "==", "4688") then
+                log_exec = event
+            else
+                log_file = event
+            end
+        end
+--        log("log_exec and log_file: " .. tostring(log_exec) .. " == " .. tostring(log_file))
+        if log_exec and log_file then
+            
+            local initiator_name = log_exec:gets("initiator.user.name")  
+            local host_ip = log_exec:get("observer.host.ip")
+            local host_name = log_exec:gets("observer.host.hostname")
+            local host_fqdn = log_exec:gets("observer.host.fqdn")
+            local process_path = log_exec:gets("target.process.path.full")
+            local parent_path = log_exec:gets("initiator.process.parent.path.original")
+            local command_executed = string_cut(log_exec:gets("initiator.command.executed"))
+            local program_name = log_exec:gets("target.image.name")
+            local file_path = log_file:gets("target.object.name")
+
+            alert_function(template2, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, parent_path, process_path, file_path)
+            grouper2:clear()
+        end
+
+    end
+end
+
+grouper1 = grouper.new(grouped_by1, aggregated_by1, grouped_time_field, detection_window, on_grouped1)
+grouper2 = grouper.new(grouped_by2, aggregated_by2, grouped_time_field, detection_window, on_grouped2)
