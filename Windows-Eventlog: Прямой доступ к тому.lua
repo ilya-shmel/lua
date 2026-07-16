@@ -26,26 +26,8 @@ local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
 local suspicious_pattern = [[(?:^|\s+|\\|\/|"|')(?:(?:io\.filestream|createfile)[\s\S]*['"]\\\\\.\\\w:['"]|(?:rawcopy|osfmount|diskshadow|win32_shadowcopy[\s\S]*\.create|vssadmin\s+(?:create|list)\s+shadows?|wbadmin\s+start\s+(?:backup|recovery))(?:\s+|\\|\/|"|'|\(|$))]]
-
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
--- Вспомогательная функция логирования значений в функции on_logline
-local function log_on_logline(event)
-    log("###  on_logline  ###")
-    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-    log("Command: " .. event:gets("initiator.command.executed"):lower())
-    log("Pattern: " .. suspicious_pattern)
-    log("Regex result: " .. tostring(event:gets("initiator.command.executed"):lower():search(suspicious_pattern)))
-end
+local disk_pattern = "[\'\"]?\\%.\\(%a:)[\'\"]?,"
+local operations_pattern = "%.\\%a:[\'\"]?,%s*([%s%S]-);"
 
 -- Функция алерта
 local function alert_function(events, ip, hostname, fqdn, user, cmd, program, object, disk, operation)
@@ -89,7 +71,6 @@ end
 
 -- Функция обработки логлайна
 function on_logline(logline)
---    log_on_logline(logline)
     local event_id = logline:gets("observer.event.id")
 
     if compare(event_id, "==", "4104") then
@@ -109,8 +90,6 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_scriptblock, log_module
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -130,13 +109,12 @@ function on_grouped(grouped)
             local comandlet = log_module:gets("initiator.process.command")
             local command_executed = string_cut(log_scriptblock:gets("initiator.command.executed"))
             local target_object = log_module:gets("target.object.name")
-            local disk_name = log_module:get("target.object.path.name") or command_executed:match("[\'\"]?\\%.\\(%a:)[\'\"]?,")
-            local operation_name = log_module:get("initiator.operation.name") or command_executed:match("%.\\%a:[\'\"]?,%s*([%s%S]-);"):gsub("'", "")
+            local disk_name = log_module:get("target.object.path.name") or command_executed:match(disk_pattern)
+            local operation_name = log_module:get("initiator.operation.name") or command_executed:match(operations_pattern):gsub("'", "")
 
             alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, comandlet, target_object, disk_name, operation_name)
             grouper1:clear()
         end
-
     end
 end
 

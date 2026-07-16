@@ -153,3 +153,29 @@ function on_logline(logline)
         grouper1:feed(logline)
     end
 end
+
+
+-- Разбор событий в группере для двух событий EventID 4104 и 4103
+        for _, event in ipairs(events) do
+            local event_id = event:gets("observer.event.id")
+
+            if compare(event_id, "==", "4104") then
+                log_scriptblock = event
+            else
+                log_module = event
+            end
+        end
+
+------------------------------------------------------------------------------------------------------
+
+-- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
+local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
+    log("### " .. grouper_name .. " ###")
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    
+    for _, event in ipairs(events) do
+	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
+        log("Grouper field: " .. tostring(event:gets(grouper_field)) .. " ; " .. tostring(event:gets("event.rule.description")))
+        log("Command executed: " .. event:gets("initiator.command.executed")) 
+    end    
+end
