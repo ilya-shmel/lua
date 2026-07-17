@@ -14,6 +14,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 {{ .Meta.command }}
 Имя программы: {{ .Meta.program }}
 Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Родительский процесс: {{ .Meta.parent }}
 ]]
 
 local template2 = [[
@@ -43,6 +44,8 @@ local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.hos
 local aggregated_by1 = {"target.image.name"}
 local grouped_by2 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.process.id"}
 local aggregated_by2 = {"observer.event.id"}
+local grouped_by3 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "target.image.name"}
+local aggregated_by3 = {"observer.event.id"}
 
 -- Регулярные выражения
 local service_patterns = {   
@@ -53,7 +56,11 @@ local service_patterns = {
     
     NET_EXE = {
         pattern = [[(?:^|\/|\s+|"|'|\()net(\.exe)?(?:$|\/|\s+|"|'|\))start([\s>]+\w:(\\?[^\\]+)*\.\w{1,5})?]]
-        }
+        },
+    ENUMERATE = { 
+        pattern = [[(?:^|\/|\s+|"|'|\()(?:get-service|schtasks[\s\S]*list)(?:$|\/|\s+|"|'|\))]]
+    }
+    
 }
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
@@ -156,6 +163,7 @@ function on_logline(logline)
     if compare(event_id, "==", "4688") then
         local image_name = logline:gets("target.image.name")
         local command_executed = logline:gets("initiator.command.executed")
+--        log("Image: " .. image_name)
 
         if image_name == "sc.exe" or image_name == "tasklist.exe" then 
             if analyze(command_executed, service_patterns.SERVICE_LIST.pattern) then
@@ -166,6 +174,11 @@ function on_logline(logline)
             if analyze(command_executed, service_patterns.NET_EXE.pattern) then
                 set_field_value(logline, "event.process.id", logline:gets("target.process.id"))
                 grouper2:feed(logline)
+            end
+        elseif image_name == "powershell.exe" or image_name == "schtasks.exe" then
+            log("Command: " .. command_executed)
+            if analyze(command_executed, service_patterns.ENUMERATE.pattern) then
+                grouper3:feed(logline)
             end
         end
     elseif compare(event_id, "==", "4663") then
@@ -205,7 +218,7 @@ function on_grouped1(grouped)
             local program_name = table.concat(get_unique_elements(target_images), "; ")
             local target_path = table.concat(get_unique_elements(paths), "; ")
 
-            alert_function(template1, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, initiator_path, target_path)
+            alert_function(template1, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, initiator_path, target_path, "")
             grouper1:clear()
         end
 
@@ -246,5 +259,27 @@ function on_grouped2(grouped)
     end
 end
 
+function on_grouped3(grouped)
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local first_event = events[1]    
+--    log_grouper(events, #events, unique_events, "on_grouped3", grouped_by3[4])
+
+    if #events > 0 then
+        local initiator_name = first_event:gets("initiator.user.name")  
+        local host_ip = first_event:get("observer.host.ip")
+        local host_name = first_event:gets("observer.host.hostname")
+        local host_fqdn = first_event:gets("observer.host.fqdn")
+        local process_path = first_event:gets("target.process.path.full")
+        local parent_path = first_event:gets("initiator.process.parent.path.original")
+        local command_executed = string_cut(first_event:gets("initiator.command.executed"))
+        local program_name = first_event:gets("target.image.name")
+
+        alert_function(template1, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, parent_path, process_path, "")
+        grouper3:clear()
+    end
+end
+
 grouper1 = grouper.new(grouped_by1, aggregated_by1, grouped_time_field, detection_window, on_grouped1)
 grouper2 = grouper.new(grouped_by2, aggregated_by2, grouped_time_field, detection_window, on_grouped2)
+grouper3 = grouper.new(grouped_by3, aggregated_by3, grouped_time_field, detection_window, on_grouped3)
