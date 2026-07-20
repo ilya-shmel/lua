@@ -80,22 +80,10 @@ local service_patterns = {
     },
     SERVICES_REGISTRY = {
         pattern = [[(?:^|\/|\s+|"|'|\()get-[^\s]+\s+[^:'"]+['"]?hk\w{1,2}:(\\[^\\]+)+\\services(?:$|\/|\s+|"|'|\))]],
-        object_pattern = "[%w%.]+\\%w+::HK[%w_]+[\\%w]+Services\\([^\\]+)"
+        object_pattern = "HK[%w_]+[\\%w]+Services\\([^\\]+)"
     }
     
 }
-
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field)))
-        log("Command executed: " .. event:gets("initiator.command.executed")) 
-    end
-end
 
 -- Проверка на случай, если в событии вместо строки указано `[]`, или `{}`, или элемент принимает тип "Таблица"
 local function check_empty_field(field)
@@ -113,8 +101,8 @@ local function get_unique_elements(input_array)
     local result_table = {}  -- Новый массив с уникальными значениями
 
     for _, element in ipairs(input_array) do
--- Если мы еще не встречали такое значение
-        local is_odd = check_empty_field(element)
+        local is_odd = check_empty_field(element) -- Если мы еще не встречали такое значение
+        
         if is_odd then
             element = is_odd
         end
@@ -127,6 +115,7 @@ local function get_unique_elements(input_array)
 
     return result_table
 end
+
 -- Функция алерта
 local function alert_function(template, events, ip, hostname, fqdn, user, cmd, program, parent, path, file)
     alert({
@@ -170,8 +159,7 @@ end
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd, pattern)
     local cmd_lower = cmd:lower()
---    log("Command: " .. cmd_lower)
---    log("Regex result: " .. tostring(cmd_lower:search(pattern)))
+ 
     if cmd_lower:search(pattern) then
         return true
     end
@@ -186,7 +174,6 @@ function on_logline(logline)
     if compare(event_id, "==", "4688") then
         local image_name = logline:gets("target.image.name")
         local command_executed = logline:gets("initiator.command.executed")
---        log("Image: " .. image_name)
 
         if image_name == "sc.exe" or image_name == "tasklist.exe" then 
             if analyze(command_executed, service_patterns.SERVICE_LIST.pattern) then
@@ -199,7 +186,7 @@ function on_logline(logline)
                 grouper2:feed(logline)
             end
         elseif image_name == "powershell.exe" or image_name == "schtasks.exe" then
-            --log("Command: " .. command_executed)
+            --
             if analyze(command_executed, service_patterns.ENUMERATE.pattern) then
                 grouper3:feed(logline)
             end
@@ -227,8 +214,6 @@ function on_grouped1(grouped)
     local target_images = {}
     local paths = {}
     
---    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
-
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local command_executed = event:gets("initiator.command.executed")
@@ -256,11 +241,11 @@ function on_grouped1(grouped)
     end
 end
 
+-- Функция группера #2
 function on_grouped2(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_file    
---    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -270,9 +255,8 @@ function on_grouped2(grouped)
                 log_file = event
             end
         end
---        log("log_exec and log_file: " .. tostring(log_exec) .. " == " .. tostring(log_file))
+
         if log_exec and log_file then
-            
             local initiator_name = log_exec:gets("initiator.user.name")  
             local host_ip = log_exec:get("observer.host.ip")
             local host_name = log_exec:gets("observer.host.hostname")
@@ -294,7 +278,6 @@ function on_grouped3(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local first_event = events[1]    
---    log_grouper(events, #events, unique_events, "on_grouped3", grouped_by3[4])
 
     if #events > 0 then
         local initiator_name = first_event:gets("initiator.user.name")  
@@ -317,7 +300,6 @@ function on_grouped4(grouped)
     local log_scriptblock
     local log_modules = {}
     local target_objects = {}
---    log_grouper(events, #events, unique_events, "on_grouped4", grouped_by4[4])
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -326,14 +308,11 @@ function on_grouped4(grouped)
             else
                 table.insert(log_modules, event)
                 local target_object = event:gets("target.object.name")
-                log("Target object: " .. target_object)
                 local object_name = target_object:match(service_patterns.SERVICES_REGISTRY.object_pattern)
-                log("Object shortname: " .. object_name)
                 table.insert(target_objects, (event:gets("target.object.name"):match(service_patterns.SERVICES_REGISTRY.object_pattern)))
             end
         end
 
-        log("Objects number: " .. tostring(#target_objects))
         if log_scriptblock and #log_modules > 2 then
             local initiator_name = log_modules[1]:gets("initiator.user.name")  
             local host_ip = log_scriptblock:get("observer.host.ip")
@@ -342,8 +321,7 @@ function on_grouped4(grouped)
             local command_executed = string_cut(log_scriptblock:gets("initiator.command.executed"))
             local program_name = log_scriptblock:gets("initiator.process.command")
             local target_object = string_cut(table.concat(target_objects, "; "))
-            log("Object: " .. target_object)
--- alert_function(template, events, ip, hostname, fqdn, user, cmd, program, parent, path, file)
+
             alert_function(template3, events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, "", "", target_object)
             grouper3:clear()
         end
