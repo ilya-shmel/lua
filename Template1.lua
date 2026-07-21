@@ -179,3 +179,16 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
         log("Command executed: " .. event:gets("initiator.command.executed")) 
     end    
 end
+
+-- Вспомогательная функция логирования значений в функции on_logline
+local function log_on_logline(event)
+    local event_id = tostring(event:gets("observer.event.id"))
+    local command_executed = event:gets("initiator.command.executed")
+    log("###  on_logline  ###")
+    log("Event ID: " .. event_id)
+    log("Command: " .. command_executed:lower())
+    log("Pattern: " .. dump_pattern)
+    log("Dump file pattern: " .. dump_file_pattern)
+    log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
+    log("Dump file: " .. tostring(command_executed:match(dump_file_pattern)))
+end

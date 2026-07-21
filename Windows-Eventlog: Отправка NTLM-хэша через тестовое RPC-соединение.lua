@@ -82,20 +82,23 @@ end
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local first_event = events[1]
+    local command_executed = string_cut(first_event:gets("initiator.command.executed"))
     
     if first_event then
-        local initiator_name = first_event:gets("initiator.user.name")  
-        local host_ip = first_event:gets("observer.host.ip")
-        local host_name = first_event:gets("observer.host.hostname")
-        local host_fqdn = first_event:gets("observer.host.fqdn")
-        local program_name = first_event:gets("target.image.name")
-        local command_executed = string_cut(first_event:gets("initiator.command.executed"))
-        local process_path = first_event:get("target.process.path.full")
         local target_ip = command_executed:match(ip_pattern)
         local target_port = command_executed:match(port_pattern)
+        
+        if target_ip and target_port then
+            local initiator_name = first_event:gets("initiator.user.name")  
+            local host_ip = first_event:gets("observer.host.ip")
+            local host_name = first_event:gets("observer.host.hostname")
+            local host_fqdn = first_event:gets("observer.host.fqdn")
+            local program_name = first_event:gets("target.image.name")
+            local process_path = first_event:get("target.process.path.full")
 
-        alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path, target_ip, target_port)
-        grouper1:clear()
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path, target_ip, target_port)
+            grouper1:clear()
+        end
     end
 end
 
