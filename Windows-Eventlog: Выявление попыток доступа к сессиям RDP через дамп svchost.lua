@@ -51,7 +51,7 @@ local function log_on_logline(event)
         log("Pattern: " .. dump_pattern)
         log("Dump file pattern: " .. dump_file_pattern)
         log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
-        log("Dump file: " .. file_name)
+        log("Dump file: " .. (file_name or "nil"))
     else
         log("Dump file: " .. event:gets("target.object.name"))
     end

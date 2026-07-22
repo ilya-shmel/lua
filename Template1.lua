@@ -154,6 +154,15 @@ function on_logline(logline)
     end
 end
 
+-- Функция обработки логлайна для одного события 4688
+function on_logline(logline)
+    local command_executed = logline:gets("initiator.command.executed")
+
+    if command_executed:search(mgr_pattern) then
+        grouper1:feed(logline)
+    end
+end
+
 
 -- Разбор событий в группере для двух событий EventID 4104 и 4103
         for _, event in ipairs(events) do
@@ -165,6 +174,28 @@ end
                 log_module = event
             end
         end
+
+
+-- Функция группера для одного события 4688
+function on_grouped(grouped)
+    local events = grouped.aggregatedData.loglines
+    local first_event = events[1]
+    
+--    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+
+    if first_event then
+        local initiator_name = first_event:gets("initiator.user.name")  
+        local host_ip = first_event:get("observer.host.ip")
+        local host_name = first_event:gets("observer.host.hostname")
+        local host_fqdn = first_event:gets("observer.host.fqdn")
+        local program_name = first_event:gets("target.image.name")
+        local command_executed = string_cut(first_event:gets("initiator.command.executed"))
+        local process_path = first_event:get("target.process.path.full")
+        
+        alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path)
+        grouper1:clear()
+    end
+end
 
 ------------------------------------------------------------------------------------------------------
 
@@ -191,4 +222,20 @@ local function log_on_logline(event)
     log("Dump file pattern: " .. dump_file_pattern)
     log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
     log("Dump file: " .. tostring(command_executed:match(dump_file_pattern)))
+end
+
+-- Вспомогательная функция логирования значений в функции on_logline для EventID 4688
+local function log_on_logline(event)
+    local event_id = tostring(event:gets("observer.event.id"))
+    log("###  on_logline  ###")
+    log("Event ID: " .. event_id)
+    
+    if compare(event_id, "==", "4688") then
+        local command_executed = event:gets("initiator.command.executed") 
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. dump_pattern)
+        log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
+    else
+        log("Dump file: " .. event:gets("target.object.name"))
+    end
 end
