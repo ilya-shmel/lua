@@ -41,18 +41,24 @@ end
 -- Вспомогательная функция логирования значений в функции on_logline
 local function log_on_logline(event)
     local event_id = tostring(event:gets("observer.event.id"))
-    local command_executed = event:gets("initiator.command.executed")
     log("###  on_logline  ###")
     log("Event ID: " .. event_id)
-    log("Command: " .. command_executed:lower())
-    log("Pattern: " .. dump_pattern)
-    log("Dump file pattern: " .. dump_file_pattern)
-    log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
-    log("Dump file: " .. tostring(command_executed:match(dump_file_pattern)))
+    
+    if compare(event_id, "==", "4688") then
+        local command_executed = event:gets("initiator.command.executed") 
+        local file_name = command_executed:match(dump_file_pattern)
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. dump_pattern)
+        log("Dump file pattern: " .. dump_file_pattern)
+        log("Command regex result: " .. tostring(command_executed:lower():search(dump_pattern)))
+        log("Dump file: " .. file_name)
+    else
+        log("Dump file: " .. event:gets("target.object.name"))
+    end
 end
 
 -- Функция алерта
-local function alert_function(events, ip, hostname, fqdn, user, cmd, program, service, path, file)
+local function alert_function(events, ip, hostname, fqdn, user, cmd, program, path, file)
     alert({
         template = template,
         meta = {
@@ -93,6 +99,7 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
+    log("EventID: " .. tostring(event_id))
 
     if compare(event_id, "==", "4688") then
         local command_executed = logline:gets("initiator.command.executed")
