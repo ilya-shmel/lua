@@ -239,3 +239,41 @@ local function log_on_logline(event)
         log("Dump file: " .. event:gets("target.object.name"))
     end
 end
+------------------------------------------------------------------------------------------------------
+-- Функция группера для пары типов событий EventID 4104 + EventID 4103
+function on_grouped(grouped)
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local log_scriptblock = {}
+    local log_module = {}
+    local commands = {}
+    local objects = {}
+    
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            local event_id = event:gets("observer.event.id")
+
+            if compare(event_id, "==", "4104") then
+                table.insert(log_scriptblock, event)
+                table.insert(commands, event:gets("initiator.command.executed"))
+            else
+                table.insert(log_module, event)
+                table.insert(objects, event:gets("target.object.name"))
+            end
+        end
+
+        if #log_scriptblock > 0 and #log_module > 1 then
+            local first_scriptblock_event = log_scriptblock[1]
+            local first_module_event = log_module[1]
+            local initiator_name = first_module_event:gets("initiator.user.name")  
+            local host_ip = first_scriptblock_event:get("observer.host.ip")
+            local host_name = first_scriptblock_event:gets("observer.host.hostname")
+            local host_fqdn = first_scriptblock_event:gets("observer.host.fqdn")
+            local command_executed = string_cut(table.concat(commands, "; "))
+            local objects = string_cut(table.concat(objects, "; "))
+
+            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, objects)
+            grouper1:clear()
+        end
+    end
+end
