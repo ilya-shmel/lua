@@ -23,8 +23,6 @@ local aggregated_by = {"target.syscall.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
-local prefix = "(?:^|\\/|\\s+|\"|\'|\\()"
-local suffix = "(?:$|\\/|\\s+|\"|\'|\\))"
 local suspicious_patterns = {   
                         
 }
@@ -41,32 +39,21 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
 end
 
 -- Функция алерта
-local function alert_function(events, ip, hostname, fqdn, user, cmd, program, service, path, source, destination)
+local function alert_function(events, meta)
     alert({
         template = template,
-        meta = {
-            user=user,
-            command=cmd,
-            path=path,
-            program=program,
-            service=service,
-            source_file=source,
-            destination_file=destination,
-            ip=ip,
-            hostname=hostname,
-            fqdn=fqdn
-            },
-        risk_level = 4.0, 
-        asset_ip = ip,
-        asset_hostname = hostname,
-        asset_fqdn = fqdn,
+        meta = meta,
+        risk_level = 7.5, 
+        asset_ip = meta.ip,
+        asset_hostname = meta.hostname,
+        asset_fqdn = meta.fqdn,
         asset_mac = "",
         create_incident = true,
         incident_group = "",
         assign_to_customer = false,
         incident_identifier = "",
         logs = events,
-        mitre = {"T1003.004"},
+        mitre = {"T1020"},
         trim_logs = 10
         }
      )
@@ -179,20 +166,27 @@ end
 -- Функция группера для одного события 4688
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local commands = {}
     local first_event = events[1]
-    
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
-    if first_event then
-        local initiator_name = first_event:gets("initiator.user.name")  
-        local host_ip = first_event:get("observer.host.ip")
-        local host_name = first_event:gets("observer.host.hostname")
-        local host_fqdn = first_event:gets("observer.host.fqdn")
-        local program_name = first_event:gets("target.image.name")
-        local command_executed = string_cut(first_event:gets("initiator.command.executed"))
-        local process_path = first_event:get("target.process.path.full")
         
-        alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, process_path)
+    if unique_events > 0 then
+        for _, event in ipairs(events) do
+            table.insert(commands, event:gets("initiator.command.executed"))
+        end
+        
+        local meta = {
+            user=first_event:gets("initiator.user.name"),
+            command=string_cut(table.concat(commands, "; ")),
+            path=first_event:gets("target.process.path.full"),
+            program=first_event:gets("target.image.name"),
+            parent=first_event:gets("initiator.process.parent.path.original"),
+            ip=first_event:gets("observer.host.ip"),
+            hostname=first_event:gets("observer.host.hostname"),
+            fqdn=first_event:gets("observer.host.fqdn")
+        }
+
+        alert_function(events, meta)
         grouper1:clear()
     end
 end
@@ -275,5 +269,14 @@ function on_grouped(grouped)
             alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, objects)
             grouper1:clear()
         end
+    end
+end
+
+-- Функция обработки логлайна для одного типа событий EventID 4688, EventID 4104, EventID 4103
+function on_logline(logline)
+    local command_executed = logline:gets("initiator.command.executed"):lower()
+
+    if command_executed:search(dump_pattern) then
+        grouper1:feed(logline)
     end
 end

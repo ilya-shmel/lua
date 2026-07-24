@@ -20,8 +20,8 @@ local command_types = {
 }
 
 -- Переменные для группера
-local detection_window = "1m"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "operation.type"}
+local detection_window = "30s"
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "operation.type"}
 local aggregated_by = {"target.image.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
