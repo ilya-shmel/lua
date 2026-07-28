@@ -1,6 +1,6 @@
 -- Шаблон алерта
 local template = [[
-Подозрение на маскировку процесса через SYSCALL vfork и SYSCALL clone.
+{{ .Meta.title }}.
 
 ЦЕЛЕВОЙ УЗЕЛ:
 IP: {{ or .Meta.ip "IP-адрес не определён" }}
