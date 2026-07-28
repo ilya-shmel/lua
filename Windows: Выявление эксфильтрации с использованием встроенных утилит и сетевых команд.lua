@@ -1,51 +1,95 @@
--- Шаблоны алерта
+-- Шаблон алерта
 local template = [[
-	Подозрение на эксфильтрацию с использованием утилит.
+{{ .Meta.title }}
 
-    Узел: 
-    {{ if .First.observer.host.ip }}IP - "{{ .First.observer.host.ip }}"{{ else }}"IP-адрес неопределен"{{ end }}
-    {{ if .First.observer.host.hostname }}Hostname - "{{ .First.observer.host.hostname }}"{{ else }}"Имя узла неопределено"{{ end }}
-    Пользователь (инициатор): {{ .Meta.user_name }}
-    Выполненная команда: {{ .Meta.command }}
-    Окружение, из которого выполнялась команда: {{ .Meta.path }}
+ЦЕЛЕВОЙ УЗЕЛ:
+IP: {{ or .Meta.ip "IP-адрес не определён" }}
+Узел: {{ or .Meta.hostname "Имя узла не определено" }}
+FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
+
+ИНИЦИАТОР:
+Пользователь: {{ or .Meta.user "Пользователь не определён"}}
+
+ВЫПОЛНЕННАЯ КОМАНДА:
+{{ .Meta.command }}
+Имя программы: {{ .Meta.program }}
+Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Родительский процесс {{ .Meta.parent }} 
 ]]
-
-local command_types = {
-    [1] = "rar",
-    [2] = "7z",
-    [3] = "zip",
-    [4] = "winrar",
-    [5] = "plink",
-    [6] = "makecab",
-}
 
 -- Переменные для группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "operation.type"}
-local aggregated_by = {"target.image.name"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "target.image.name"}
+local aggregated_by = {"initiator.command.executed"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Регулярные выражения
-local prefix = "(?:^|\\/|\\s+|\"|\'|\\\\)" 
-local regex_patterns = {
-    prefix.. "(win)?rar\\.exe[\'\"]?\\s+[-\\w\\s]+(\\s[\'\"]?\\w:(\\\\[^\\\\]*)+\\\\?\\.(?:rar|[^ra]+)[\'\"]?){2}",
-    prefix.. "7z\\.exe[\"\']?\\s+(\\w\\s+)+[^\\.]+\\.7z\\s+\\*\\w{1,5}(\\s+-\\w+)",
-    prefix.. "(win)?rar\\.exe[\'\"]?\\s+\\w\\s+-\\w+([\'\"\\w]+)?\\s+[\'\"]?\\w+\\.rar",
-    prefix.. "(win)?zip(64)?\\.exe[\'\"]?(\\s+-[\\w\"\']+)+\\s+\\w+\\.zip[^\\w]+",
-    prefix.. "plink\\.exe[\'\"]?\\s+-ssh\\s+[\\w\\.]+\\s+[-\\w\\s\\/]+\\s+\\w:(\\\\[^\\\\]+)+\\.\\w{1,5}",
-    prefix.. "makecab\\.exe\\s+[\\\\:\\w\\.]+\\s+[\\\\:\\w]+\\.(?:rar|zip|7z)"
+local arch_patterns = {
+    RAR = {
+            short_pattern = "rar%.exe",
+            main_pattern = [[(?:^|\s+|"|'|\/|\\|{)(win)?rar\.exe[\\\s"'\:;)]([\s\S]*)?\.rar(?:$|['"]?\s+([\s\S]*)?[*.]\w+)]],
+            name = "Подозрение на эксфильтрацию с использованием утилиты WinRar."
+    },
+    SEVENZ = {
+            short_pattern = "7z%.exe",
+            main_pattern = [[(?:^|\s+|"|'|\\|{)7z\.exe[\\\s"':;)]\s+\w([\s\S]*)\.7z\s+\*\w{1,6}]],
+            name = "Подозрение на эксфильтрацию с использованием утилиты 7z."
+    },
+    ZIP = {
+            short_pattern = "(zip(64)?%.exe)",
+            main_pattern = [[(?:^|\s+|"|'|\\|{)(win)?zip(64)?\.exe[\\\s"'\:;)](\s+-[\w"']+)+\s+\w+\.zip[\s*]+]],
+            name = "Подозрение на эксфильтрацию с использованием утилиты zip."
+    },
+    PLINK = {
+            short_pattern = "(plink%.exe)",
+            main_pattern = [[(?:^|\s+|"|'|\/|\\|{)plink\.exe[\\\s"'\:;)](\s+-(?:ssh|l|pw|password|m)\s+[\w.\/:~\\]+)+]],
+            name = "Подозрение на эксфильтрацию с использованием утилиты plink."
+    },
+    MAKECAB = {
+            short_pattern = "(makecab%.exe)",
+            main_pattern = [[(?:^|\s+|"|'|\/|\\|{)makecab(\.exe)?[\\\s"'\:;)](\s+)?(\w:(\\[^\\\s]*)+)?\w+\.\w{1,8}\s+(\w:(\\[^\\\s]*)+)?\.(?:zip|rar|7z|cab|dat)]],
+            name = "Подозрение на эксфильтрацию с использованием утилиты makecab."
+    }
 }
 
+-- Функция алерта
+local function alert_function(events, meta)
+    alert({
+        template = template,
+        meta = meta,
+        risk_level = 7.5, 
+        asset_ip = meta.ip,
+        asset_hostname = meta.hostname,
+        asset_fqdn = meta.fqdn,
+        asset_mac = "",
+        create_incident = true,
+        incident_group = "",
+        assign_to_customer = false,
+        incident_identifier = "",
+        logs = events,
+        mitre = {"T1020", "T1560.001"},
+        trim_logs = 10
+        }
+     )
+end
+
+-- Функция сокращения строки для алерта
+local function string_cut(cmd)
+    if #cmd > 128 then
+        cmd = cmd:sub(1, 128).. "... "
+    end
+
+    return cmd
+end
 -- Функция анализа строки
 local function analyze(cmd)
     local cmd_string = cmd:lower()
-    local index = 0
-    for _, pattern in ipairs(regex_patterns) do
-        local is_command = cmd_string:search(pattern)
-        index = index + 1
-        
-        if is_command then 
-            return true, index
+    
+    for _, pattern in pairs(arch_patterns) do
+        if cmd_string:match(pattern.short_pattern) then
+            if cmd_string:search(pattern.main_pattern) then
+                return true, pattern.name
+            end         
         end
     end
 
@@ -55,9 +99,8 @@ end
 -- Функция работы с логлайном
 function on_logline(logline)
     local command_executed = logline:gets("initiator.command.executed")
-    local is_command, index = analyze(command_executed)
-    operation_type = command_types[index]
-    set_field_value(logline,"operation.type", operation_type)
+    local is_command, title = analyze(command_executed)
+    set_field_value(logline,"event.rule.description", title)
 
     if is_command then
        grouper1:feed(logline)
@@ -67,41 +110,29 @@ end
 -- Функция сработки группера
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local commands = {}
+    local first_event = events[1]
+        
+    if unique_events > 0 then
+        for _, event in ipairs(events) do
+            table.insert(commands, event:gets("initiator.command.executed"))
+        end
+        
+        local meta = {
+            user=first_event:gets("initiator.user.name"),
+            command=string_cut(table.concat(commands, "; ")),
+            path=first_event:gets("target.process.path.full"),
+            program=first_event:gets("target.image.name"),
+            parent=first_event:gets("initiator.process.parent.path.original"),
+            title=first_event:gets("event.rule.description"),
+            ip=first_event:gets("observer.host.ip"),
+            hostname=first_event:gets("observer.host.hostname"),
+            fqdn=first_event:gets("observer.host.fqdn")
+        }
 
-    if #events > 0 then
-       local initiator_name = events[1]:get("initiator.user.name") or "Пользователь не определен" 
-       local host_ip = events[1]:get_asset_data("observer.host.ip")
-       local host_name = events[1]:get_asset_data("observer.host.hostname")
-       local host_fqdn = events[1]:get_asset_data("observer.host.fqdn")
-       local command_executed = events[1]:gets("initiator.command.executed")
-       local command_path = events[1]:get("target.process.path.full") or events[1]:get("target.file.path") or events[1]:get("target.image.name") or events[1]:get("event.logsource.application")
-       
-       if #command_executed > 128 then
-            command_executed = command_executed:sub(1,128).. "..."
-       end
-       
-       alert({
-            template = template,
-            meta = {
-                user_name=initiator_name,
-                command=command_executed,
-                path=command_path
-                },
-            risk_level = 8.0, 
-            asset_ip = host_ip,
-            asset_hostname = host_name,
-            asset_fqdn = host_fqdn,
-            asset_mac = "",
-            create_incident = true,
-            incident_group = "",
-            assign_to_customer = false,
-            incident_identifier = "",
-            logs = events,
-            mitre = {"T1560.001"},
-            trim_logs = 10
-            }
-        )
-       grouper1:clear()
+        alert_function(events, meta)
+        grouper1:clear()
     end
 end
 
