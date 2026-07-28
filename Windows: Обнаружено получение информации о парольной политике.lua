@@ -18,7 +18,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.rule.description"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.rule.description", "target.image.name"}
 local aggregated_by = {"initiator.command.executed"}
 local grouped_time_field = "@timestamp,RFC3339"
 
@@ -29,17 +29,17 @@ local threats = {{
     risk = 6.0,
     mitre = {"T1021"}
 }, {
-    pattern = [=[(?:^|\s+|"|'|\\)(?:get\\-passpol|get\\-domainpolicy)[\\\s"'\:;)]]=],
-    name = "Использование утилит PowerView/PowerSploit для получения парольной политики",
+    pattern = [=[(?:^|\s+|"|'|\/)(?:get-passpol|get-domainpolicy)[\\\s"'\:;.)]]=],
+    name = "Использование утилит PowerView/PowerSploit/PoshC2 для получения парольной политики",
     risk = 8.5,
     mitre = {"T1021"}
 }, {
-    pattern = [=[(?:^|\s+|"|'|\\)get\-addefaultdomainpasswordpolicy[\\\s"'\:;)]]=],
+    pattern = [=[(?:^|\s+|"|'|\/|\()get-(?:adefaultdomainpasswordpolicy|aduser)(?:[\\\s"'\:;)]|$)([^,]+(\s?(cannotchange)?password(?:lastset|neverexpires|expired|notrequired|$),?)+)]=],
     name = "Получение парольной политики домена через Active Directory PowerShell",
     risk = 6.5,
     mitre = {"T1021"}
 }, {
-    pattern = [=[(?:^|\s+|"|'|\\)secedit(\.exe)?\s+\/export([\s\S]*)?securitypolicy[\\\s"'\:;)]]=],
+    pattern = [=[(?:^|\s+|"|'|\\)secedit(\.exe)?[\\\s"'\:;)](\s+)?\/export([\s\S]*)?securitypolicy]=],
     name = "Экспорт локальной политики безопасности через secedit",
     risk = 7.0,
     mitre = {"T1021"}
@@ -107,7 +107,7 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local command_executed = logline:gets("initiator.command.executed")
-    local is_password, title, risk, mitre = command_executed:search(threats) 
+    local is_password, title, risk, mitre = analyze(command_executed) 
 
     if is_password then
         set_field_value(logline, "event.rule.description", title)
@@ -124,6 +124,8 @@ function on_grouped(grouped)
     local commands = {}
     local first_event = events[1]
         
+    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+
     if unique_events > 0 then
         for _, event in ipairs(events) do
             table.insert(commands, event:gets("initiator.command.executed"))
@@ -147,3 +149,5 @@ function on_grouped(grouped)
         grouper1:clear()
     end
 end
+
+grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
