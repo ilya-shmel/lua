@@ -18,9 +18,11 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.rule.description", "target.image.name"}
-local aggregated_by = {"initiator.command.executed"}
 local grouped_time_field = "@timestamp,RFC3339"
+local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.rule.description", "target.image.name"}
+local aggregated_by1 = {"initiator.command.executed"}
+local grouped_by2 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "observer.process.id"}
+local aggregated_by2 = {"observer.event.id"}
 
 -- Регулярные выражения
 local threats = {{
@@ -29,12 +31,12 @@ local threats = {{
     risk = 6.0,
     mitre = {"T1021"}
 }, {
-    pattern = [=[(?:^|\s+|"|'|\/)(?:get-passpol|get-domainpolicy)[\\\s"'\:;.)]]=],
-    name = "Использование утилит PowerView/PowerSploit/PoshC2 для получения парольной политики",
+    pattern = [=[(?:^|\s+|"|'|\/)get-(?:passpol|domainpolicy|adreplaccount)(?:[\\\s"'\:;.)]|$)]=],
+    name = "Использование утилит PowerView/PowerSploit/PoshC2/DSInternals для получения парольной политики",
     risk = 8.5,
     mitre = {"T1021"}
 }, {
-    pattern = [=[(?:^|\s+|"|'|\/|\()get-(?:adefaultdomainpasswordpolicy|aduser)(?:[\\\s"'\:;)]|$)([^,]+(\s?(cannotchange)?password(?:lastset|neverexpires|expired|notrequired|$),?)+)]=],
+    pattern = [=[(?:^|\s+|"|'|\/|\()get-(?:addefaultdomainpasswordpolicy|aduser)(?:[\\\s"'\:;)]|$)([^,]+(\s?(cannotchange)?password(?:lastset|neverexpires|expired|notrequired|$),?)+)?]=],
     name = "Получение парольной политики домена через Active Directory PowerShell",
     risk = 6.5,
     mitre = {"T1021"}
@@ -59,6 +61,20 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
 	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
         log("Grouper field: " .. tostring(event:gets(grouper_field))) 
     end    
+end
+
+--
+local function log_on_logline(event)
+    local process_id = event:gets("observer.process.id")
+    log("###  on_logline  ###")
+        
+    if compare(process_id, "==", "3168") then
+        log("Event ID: " .. tostring(process_id))
+        local command_executed = event:gets("initiator.command.executed") 
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. threats[2].pattern)
+        log("Command regex result: " .. tostring(command_executed:lower():search(threats[2].pattern)))
+    end
 end
 
 -- Функция алерта
@@ -106,25 +122,37 @@ end
 
 -- Функция обработки логлайна
 function on_logline(logline)
-    local command_executed = logline:gets("initiator.command.executed")
-    local is_password, title, risk, mitre = analyze(command_executed) 
+    local event_id = logline:gets("observer.event.id")
 
-    if is_password then
-        set_field_value(logline, "event.rule.description", title)
-        set_field_value(logline, "event.application.risk", risk)
-        set_field_value(logline, "mitre.technique", mitre)
-        grouper1:feed(logline)
+    if compare(event_id, "==", 4103) then
+        grouper2:feed(logline)
+    else
+        log_on_logline(logline)
+        local command_executed = logline:gets("initiator.command.executed")
+        local is_password, title, risk, mitre = analyze(command_executed)
+
+        if is_password then
+            set_field_value(logline, "event.rule.description", title)
+            set_field_value(logline, "event.application.risk", risk)
+            set_field_value(logline, "mitre.technique", mitre)
+            
+            if compare(event_id, "==", 4104) then
+                grouper2:feed(logline)
+            else
+                grouper1:feed(logline)
+            end
+        end
     end
 end
 
--- Функция группера для одного события 4688
-function on_grouped(grouped)
+-- Функция группера #1
+function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local commands = {}
     local first_event = events[1]
         
-    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+--    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
 
     if unique_events > 0 then
         for _, event in ipairs(events) do
@@ -150,4 +178,42 @@ function on_grouped(grouped)
     end
 end
 
-grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
+-- Функция группера #2
+function on_grouped2(grouped)
+    local events = grouped.aggregatedData.loglines
+    local unique_events = grouped.aggregatedData.unique.total
+    local log_scriptblock, log_module
+--    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
+    if unique_events > 1 then
+        for _, event in ipairs(events) do
+            local event_id = event:gets("observer.event.id")
+
+            if compare(event_id, "==", "4104") then
+                log_scriptblock = event
+            else
+                log_module = event
+            end
+        end
+
+        if log_scriptblock and log_module then
+            local meta = {
+                user=log_module:gets("initiator.user.name"),
+                command=string_cut(log_scriptblock:gets("initiator.command.executed")),
+                path=log_module:gets("observer.service.name"),
+                program=log_module:gets("initiator.process.command"),
+                parent=log_module:gets("initiator.shell.name"),
+                title=log_scriptblock:gets("event.rule.description"),
+                risk=log_scriptblock:gets("event.application.risk"),
+                mitre=log_scriptblock:gets("mitre.technique"),
+                ip=log_scriptblock:gets("observer.host.ip"),
+                hostname=log_scriptblock:gets("observer.host.hostname"),
+                fqdn=log_scriptblock:gets("observer.host.fqdn")
+            }
+            alert_function(events, meta)
+            grouper2:clear()
+        end
+    end
+end
+
+grouper1 = grouper.new(grouped_by1, aggregated_by1, grouped_time_field, detection_window, on_grouped1)
+grouper2 = grouper.new(grouped_by2, aggregated_by2, grouped_time_field, detection_window, on_grouped2)
