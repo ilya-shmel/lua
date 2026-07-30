@@ -24,7 +24,7 @@ local aggregated_by = {"target.image.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Паттерны и регулярные выражения
-local target_exe = '%([\"\']((%a:\\[^\"\']+)%.exe)\"'
+local target_exe = '[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*'
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
 local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
@@ -33,8 +33,35 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
     
     for _, event in ipairs(events) do
 	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
+        log("PID: " .. tostring(event:gets("observer.process.id")))
+        log("Grouper field: " .. tostring(event:gets(grouper_field)))
+        log("Aggregated by: " .. event:gets("target.image.name"))
+        log("Command type: " .. event:gets("event.rule.description"))
+        log("Command executed: " .. event:gets("initiator.command.executed")) 
     end    
+end
+
+-- Логируем по image
+local function log_on_logline(event)
+    local target_image = event:gets("target.image.name")
+    log("###  on_logline  ###")
+        
+    if compare(target_image, "==", "powershell.exe") then
+        local command_executed = event:gets("initiator.command.executed"):lower() 
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. target_exe)
+        log("PID: " .. tostring(event:gets("observer.process.id")))
+        log("Command regex result: " .. tostring(command_executed:match('[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*')))
+        log("Find MMC: " .. tostring(command_executed:find("slonopotam")))
+    end
+end
+
+local function normalize_path(path)
+        path = path:lower()                             -- Приводим к нижнему регистру
+        path = path:gsub('["\']', '')                   -- Удаляем все кавычки (одинарные и двойные)
+        path = path:gsub('\\+$', '')                    -- Удаляем обратные слеши в конце (если есть)
+        path = path:gsub('^%s+', ''):gsub('%s+$', '')   -- Удаляем лишние пробелы
+    return path
 end
 
 -- Функция алерта
@@ -69,21 +96,20 @@ end
 
 -- Функция обработки логлайна для одного события 4688
 function on_logline(logline)
+--    log_on_logline(logline)
     local target_image = logline:gets("target.image.name")
-    local command_executed = logline:gets("initiator.command.executed")
+    local command_executed = logline:gets("initiator.command.executed"):lower()
 
     if target_image == "mmc.exe" then
         set_field_value(logline, "event.process.id", logline:gets("target.process.id"))
         set_field_value(logline, "event.rule.description", "lateral initiator")
         grouper1:feed(logline)
-    else
-        if command_executed:match(target_exe) and command_executed:find("MMC20%.application") then
-            set_field_value(logline, "target.command.executed", command_executed:match(target_exe))
-            set_field_value(logline, "event.rule.description", "lateral command")
-            grouper2:feed(logline)
-            return
-        end        
-        
+    elseif command_executed:match(target_exe) and command_executed:find("mmc20.application") then
+        local target_path = normalize_path(command_executed:match(target_exe)) 
+        set_field_value(logline, "target.command.executed", target_path)
+        set_field_value(logline, "event.rule.description", "lateral command")
+        grouper2:feed(logline)
+    else        
         set_field_value(logline, "event.process.id", logline:gets("initiator.process.parent.id"))
         set_field_value(logline, "event.rule.description", "lateral target")
         grouper1:feed(logline)
@@ -95,7 +121,9 @@ function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_init, log_target
-        
+    
+--    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[5])
+    
     if unique_events > 1 then
         for _, event in ipairs(events) do
             if event:gets("event.rule.description") == "lateral initiator" then
@@ -105,7 +133,7 @@ function on_grouped1(grouped)
             end
         end
 
-        local target_command = log_target:gets("initiator.command.executed")
+        local target_command = normalize_path(log_target:gets("initiator.command.executed"))
         set_field_value(log_init, "target.command.executed", target_command)
         set_field_value(log_target, "target.command.executed", target_command)
         grouper2:feed(log_init)
@@ -120,6 +148,8 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_init, log_target, log_exec 
         
+    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[5])
+
     if unique_events > 2 then
         for _, event in ipairs(events) do
             if event:gets("event.rule.description") == "lateral initiator" then
@@ -132,6 +162,7 @@ function on_grouped2(grouped)
         end
 
         if log_init and log_target and log_exec then
+            log("All events in grouper")
             local meta = {
                 user=log_exec:gets("initiator.user.name"),
                 command=string_cut(log_exec:gets("initiator.command.executed")),
@@ -139,14 +170,16 @@ function on_grouped2(grouped)
                 program=log_exec:gets("target.image.name"),
                 parent=log_exec:gets("initiator.process.parent.path.original"),
                 initiator=log_init:gets("target.image.name"),
-                target=log_target:gets("target.image.name")
+                target=log_target:gets("target.image.name"),
                 ip=log_init:gets("observer.host.ip"),
                 hostname=log_init:gets("observer.host.hostname"),
                 fqdn=log_init:gets("observer.host.fqdn"),
                 title="Латеральное перемещение через DCOM/PowerShell"
         }
         
-        grouper2:clear()
+            alert_function(events, meta)
+            grouper2:clear()
+        end
     end
 end
 
