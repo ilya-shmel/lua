@@ -280,3 +280,18 @@ function on_logline(logline)
         grouper1:feed(logline)
     end
 end
+
+
+-- Логируем по EventID
+local function log_on_logline(event)
+    local process_id = event:gets("observer.process.id")
+    log("###  on_logline  ###")
+        
+    if compare(process_id, "==", "3168") then
+        log("Event ID: " .. tostring(process_id))
+        local command_executed = event:gets("initiator.command.executed") 
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. threats[2].pattern)
+        log("Command regex result: " .. tostring(command_executed:lower():search(threats[2].pattern)))
+    end
+end

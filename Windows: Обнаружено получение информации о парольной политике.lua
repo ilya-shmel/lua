@@ -52,31 +52,6 @@ local threats = {{
     mitre = {"T1021", "T1087.001"}
 }}
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
---
-local function log_on_logline(event)
-    local process_id = event:gets("observer.process.id")
-    log("###  on_logline  ###")
-        
-    if compare(process_id, "==", "3168") then
-        log("Event ID: " .. tostring(process_id))
-        local command_executed = event:gets("initiator.command.executed") 
-        log("Command: " .. command_executed:lower())
-        log("Pattern: " .. threats[2].pattern)
-        log("Command regex result: " .. tostring(command_executed:lower():search(threats[2].pattern)))
-    end
-end
-
 -- Функция алерта
 local function alert_function(events, meta)
     alert({
@@ -127,7 +102,6 @@ function on_logline(logline)
     if compare(event_id, "==", 4103) then
         grouper2:feed(logline)
     else
-        log_on_logline(logline)
         local command_executed = logline:gets("initiator.command.executed")
         local is_password, title, risk, mitre = analyze(command_executed)
 
@@ -152,8 +126,6 @@ function on_grouped1(grouped)
     local commands = {}
     local first_event = events[1]
         
---    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
-
     if unique_events > 0 then
         for _, event in ipairs(events) do
             table.insert(commands, event:gets("initiator.command.executed"))
@@ -183,7 +155,7 @@ function on_grouped2(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_scriptblock, log_module
---    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
