@@ -19,12 +19,20 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 Родительский процесс: {{ .Meta.parent }}
 ]]
 
-
 -- Параметры группера
 local detection_window = "30s"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "target.image.name"}
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
+
+-- Функция удаления невидимых символов
+local function normalize_path(path)
+        path = path:lower()                             -- Приводим к нижнему регистру
+        path = path:gsub('["\']', '')                   -- Удаляем все кавычки (одинарные и двойные)
+        path = path:gsub('\\+$', '')                    -- Удаляем обратные слеши в конце (если есть)
+        path = path:gsub('^%s+', ''):gsub('%s+$', '')   -- Удаляем лишние пробелы
+    return path
+end
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
 local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
@@ -39,10 +47,10 @@ end
 
 -- Логируем on_logline
 local function log_on_logline(event)
-    local target_image = event:gets("target.image.name"):lower()
-    local process_path = event:gets("target.process.path.full"):lower()
+    local target_image = normalize_path(event:gets("target.image.name"))
+    local process_path = normalize_path(event:gets("target.process.path.full"))
     log("###  on_logline  ###")
-    log("Target image: " .. target_image .. ". Is whitelist: " .. tostring(whitelist:search(process_path)))
+    log("Target image: " .. target_image .. ". Is whitelist: " .. tostring(whitelist:search("process_name", target_image)))
     log("Path: " .. process_path .. ". Is Windows: " .. tostring(substr(process_path, "c:\\windows", "pref")))
 end
 
@@ -79,10 +87,10 @@ end
 -- Функция обработки логлайна для одного события 4688
 function on_logline(logline)
     log_on_logline(logline)
-    local process_path = logline:gets("target.process.path.full"):lower()
-    local image_name = logline:gets("target.image.name"):lower()
+    local process_path = normalize_path(logline:gets("target.process.path.full"))
+    local image_name = normalize_path(logline:gets("target.image.name"))
 
-    if substr(process_path, "c:\\windows", "pref") and not whitelist:search(process_path) then
+    if substr(process_path, "c:\\windows", "pref") and not whitelist:search("process_name", image_name) then
         grouper1:feed(logline)
     end
 end
@@ -95,7 +103,7 @@ function on_grouped(grouped)
     local commands = {}
     local first_event = events[1]
     
-    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+--    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
 
 
     if unique_events > 0 then
@@ -112,7 +120,7 @@ function on_grouped(grouped)
             ip=first_event:gets("observer.host.ip"),
             hostname=first_event:gets("observer.host.hostname"),
             fqdn=first_event:gets("observer.host.fqdn"),
-            title = "Обнаружено создание неизвестного процесса в системном каталоге \"C:\\Windows\".",
+            title = "Обнаружено создание неизвестного процесса в системном каталоге \"C:\\Windows\"",
             risk = 5.0,
             mitre = {"T1036"}
         }
