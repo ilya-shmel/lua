@@ -14,6 +14,9 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 {{ .Meta.command }}
 Имя программы: {{ .Meta.program }}
 Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Родительский процесс: {{ .Meta.parent }}
+Процесс-инициатор: {{ .Meta.initiator }}
+Целевой процесс: {{ .Meta.target }}
 ]]
 
 -- Параметры группера
@@ -56,6 +59,7 @@ local function log_on_logline(event)
     end
 end
 
+-- Функция удаления невидимых символов
 local function normalize_path(path)
         path = path:lower()                             -- Приводим к нижнему регистру
         path = path:gsub('["\']', '')                   -- Удаляем все кавычки (одинарные и двойные)

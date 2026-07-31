@@ -14,6 +14,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 {{ .Meta.command }}
 Имя программы: {{ .Meta.program }}
 Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
+Родительский процесс: {{ .Meta.parent }}
 ]]
 
 -- Параметры группера
@@ -293,5 +294,19 @@ local function log_on_logline(event)
         log("Command: " .. command_executed:lower())
         log("Pattern: " .. threats[2].pattern)
         log("Command regex result: " .. tostring(command_executed:lower():search(threats[2].pattern)))
+    end
+end
+
+-- Логируем по image
+local function log_on_logline(event)
+    local target_image = event:gets("target.image.name")
+    log("###  on_logline  ###")
+        
+    if compare(target_image, "==", "powershell.exe") then
+        local command_executed = event:gets("initiator.command.executed"):lower() 
+        log("Command: " .. command_executed:lower())
+        log("Pattern: " .. target_exe)
+        log("Command regex result: " .. tostring(command_executed:match('[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*')))
+        log("Find MMC: " .. tostring(command_executed:find("slonopotam")))
     end
 end
