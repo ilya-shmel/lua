@@ -29,36 +29,6 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Паттерны и регулярные выражения
 local target_exe = '[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*'
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("PID: " .. tostring(event:gets("observer.process.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field)))
-        log("Aggregated by: " .. event:gets("target.image.name"))
-        log("Command type: " .. event:gets("event.rule.description"))
-        log("Command executed: " .. event:gets("initiator.command.executed")) 
-    end    
-end
-
--- Логируем по image
-local function log_on_logline(event)
-    local target_image = event:gets("target.image.name")
-    log("###  on_logline  ###")
-        
-    if compare(target_image, "==", "powershell.exe") then
-        local command_executed = event:gets("initiator.command.executed"):lower() 
-        log("Command: " .. command_executed:lower())
-        log("Pattern: " .. target_exe)
-        log("PID: " .. tostring(event:gets("observer.process.id")))
-        log("Command regex result: " .. tostring(command_executed:match('[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*')))
-        log("Find MMC: " .. tostring(command_executed:find("slonopotam")))
-    end
-end
-
 -- Функция удаления невидимых символов
 local function normalize_path(path)
         path = path:lower()                             -- Приводим к нижнему регистру
@@ -100,7 +70,6 @@ end
 
 -- Функция обработки логлайна для одного события 4688
 function on_logline(logline)
---    log_on_logline(logline)
     local target_image = logline:gets("target.image.name")
     local command_executed = logline:gets("initiator.command.executed"):lower()
 
@@ -126,8 +95,6 @@ function on_grouped1(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_init, log_target
     
---    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[5])
-    
     if unique_events > 1 then
         for _, event in ipairs(events) do
             if event:gets("event.rule.description") == "lateral initiator" then
@@ -152,8 +119,6 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_init, log_target, log_exec 
         
-    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[5])
-
     if unique_events > 2 then
         for _, event in ipairs(events) do
             if event:gets("event.rule.description") == "lateral initiator" then
@@ -166,7 +131,6 @@ function on_grouped2(grouped)
         end
 
         if log_init and log_target and log_exec then
-            log("All events in grouper")
             local meta = {
                 user=log_exec:gets("initiator.user.name"),
                 command=string_cut(log_exec:gets("initiator.command.executed")),

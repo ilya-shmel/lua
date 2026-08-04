@@ -25,35 +25,6 @@ local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
--- Функция удаления невидимых символов
-local function normalize_path(path)
-        path = path:lower()                             -- Приводим к нижнему регистру
-        path = path:gsub('["\']', '')                   -- Удаляем все кавычки (одинарные и двойные)
-        path = path:gsub('\\+$', '')                    -- Удаляем обратные слеши в конце (если есть)
-        path = path:gsub('^%s+', ''):gsub('%s+$', '')   -- Удаляем лишние пробелы
-    return path
-end
-
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
-    end    
-end
-
--- Логируем on_logline
-local function log_on_logline(event)
-    local target_image = normalize_path(event:gets("target.image.name"))
-    local process_path = normalize_path(event:gets("target.process.path.full"))
-    log("###  on_logline  ###")
-    log("Target image: " .. target_image .. ". Is whitelist: " .. tostring(whitelist:search("process_name", target_image)))
-    log("Path: " .. process_path .. ". Is Windows: " .. tostring(substr(process_path, "c:\\windows", "pref")))
-end
-
 -- Функция алерта
 local function alert_function(events, meta)
     alert({
@@ -86,9 +57,8 @@ end
 
 -- Функция обработки логлайна для одного события 4688
 function on_logline(logline)
-    log_on_logline(logline)
-    local process_path = normalize_path(logline:gets("target.process.path.full"))
-    local image_name = normalize_path(logline:gets("target.image.name"))
+    local process_path = logline:gets("target.process.path.full"):lower()
+    local image_name = logline:gets("target.image.name"):lower()
 
     if substr(process_path, "c:\\windows", "pref") and not whitelist:search("process_name", image_name) then
         grouper1:feed(logline)
@@ -103,9 +73,6 @@ function on_grouped(grouped)
     local commands = {}
     local first_event = events[1]
     
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
-
-
     if unique_events > 0 then
         for _, event in ipairs(events) do
             table.insert(commands, event:gets("initiator.command.executed"))

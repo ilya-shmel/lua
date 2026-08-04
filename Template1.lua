@@ -19,14 +19,12 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn"}
-local aggregated_by = {"target.syscall.name"}
+local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.auth.logon.id"}
+local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
--- Регулярные выражения
-local suspicious_patterns = {   
-                        
-}
+-- Шаблоны и паттерны
+pattern1 = [[ ]]
 
 -- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
 local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
@@ -44,7 +42,7 @@ local function alert_function(events, meta)
     alert({
         template = template,
         meta = meta,
-        risk_level = 7.5, 
+        risk_level = meta.risk,
         asset_ip = meta.ip,
         asset_hostname = meta.hostname,
         asset_fqdn = meta.fqdn,
@@ -54,7 +52,7 @@ local function alert_function(events, meta)
         assign_to_customer = false,
         incident_identifier = "",
         logs = events,
-        mitre = {"T1020"},
+        mitre = meta.risk,
         trim_logs = 10
         }
      )
