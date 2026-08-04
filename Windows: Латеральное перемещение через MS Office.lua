@@ -24,25 +24,6 @@ local grouped_by2 = {"observer.host.ip", "observer.host.hostname", "observer.hos
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
-    
-    for _, event in ipairs(events) do
-        local event_id = event:gets("observer.event.id")
-        log("Event ID: " .. tostring(event_id) .. ". Grouper field: " .. tostring(event:gets(grouper_field)))
-        
-        if event_id == 4688 then 
-            local command_executed = event:gets("initiator.command.executed")
-            log("Command executed: " .. command_executed)
-        else
-            local process_path = event:gets("target.process.path.original")
-            log("Process path: " ..process_path)
-        end
-    end    
-end
-
 -- Функция алерта
 local function alert_function(events, meta)
     alert({
@@ -97,7 +78,6 @@ function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_mask, log_target, log_logon
---    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
@@ -137,7 +117,7 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_mask
     local log_task = {}
-    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
