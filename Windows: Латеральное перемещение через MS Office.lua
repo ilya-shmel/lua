@@ -30,8 +30,16 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
     log("Events: " ..#events.. ". Unique events: " ..unique_events)
     
     for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
+        local event_id = event:gets("observer.event.id")
+        log("Event ID: " .. tostring(event_id) .. ". Grouper field: " .. tostring(event:gets(grouper_field)))
+        
+        if event_id == 4688 then 
+            local command_executed = event:gets("initiator.command.executed")
+            log("Command executed: " .. command_executed)
+        else
+            local process_path = event:gets("target.process.path.original")
+            log("Process path: " ..process_path)
+        end
     end    
 end
 
@@ -40,7 +48,7 @@ local function alert_function(events, meta)
     alert({
         template = template,
         meta = meta,
-        risk_level = meta.risk, -- 7.5 
+        risk_level = meta.risk,
         asset_ip = meta.ip,
         asset_hostname = meta.hostname,
         asset_fqdn = meta.fqdn,
@@ -50,7 +58,7 @@ local function alert_function(events, meta)
         assign_to_customer = false,
         incident_identifier = "",
         logs = events,
-        mitre = meta.risk, -- {"T1021.003"}
+        mitre = meta.risk,
         trim_logs = 10
         }
      )
@@ -89,7 +97,8 @@ function on_grouped1(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
     local log_mask, log_target, log_logon
-            
+--    log_grouper(events, #events, unique_events, "on_grouped1", grouped_by1[4])
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -117,9 +126,8 @@ function on_grouped1(grouped)
             grouper2:feed(log_mask)
             grouper2:feed(log_target)
             grouper2:feed(log_logon)
+            grouper1:clear()
         end
-        
-        grouper1:clear()
     end
 end
 
@@ -129,7 +137,7 @@ function on_grouped2(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local log_exec, log_mask
     local log_task = {}
-
+    log_grouper(events, #events, unique_events, "on_grouped2", grouped_by2[4])
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local event_id = event:gets("observer.event.id")
@@ -164,10 +172,10 @@ function on_grouped2(grouped)
             }
 
             alert_function(events, meta)
+            grouper2:clear()
         end
     end
 end
 
 grouper1 = grouper.new(grouped_by1, aggregated_by, grouped_time_field, detection_window, on_grouped1)
-grouper1 = grouper.new(grouped_by2, aggregated_by, grouped_time_field, detection_window, on_grouped2)
-
+grouper2 = grouper.new(grouped_by2, aggregated_by, grouped_time_field, detection_window, on_grouped2)
