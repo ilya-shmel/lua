@@ -27,6 +27,7 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Шаблоны и паттерны
 local archivator_pattern = [=[[(?:^|\s+|"|'|\\)(?:(win)?rar|7z|(?:win|wzun)zip|tar)[\\\s"'\:;)]]=]
 local target_path_pattern = "(%a:\\[^\"\']+)\\[^\"\']+%.[excmdps1batvbsj]+$"
+local source_archive_pattern = "(%a:\\[^\"\']+\\[^\"\']+%.[ra7zipt]+)"
 local shells = {"cmd.exe", "powershell.exe", "pwsh.exe"}
 local extentions = {".exe", ".bat", ".ps1", ".vbs", ".js", ".cmd"}
 
@@ -36,8 +37,7 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
     log("Events: " ..#events.. ". Unique events: " ..unique_events)
     
     for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
+	    log("Event ID: " .. tostring(event:gets("observer.event.id")) .. ". Grouper field: " .. tostring(event:gets(grouper_field)) .. ". Aggregation field: " .. tostring(event:gets("operation.type")))
     end    
 end
 
@@ -104,17 +104,18 @@ function on_logline(logline)
         local command_executed = logline:gets("initiator.command.executed")
         local command_lower = command_executed:lower()
         local target_path = command_executed:match(target_path_pattern)
+        local archive_path = command_executed:match(source_archive_pattern)
         local image_name = logline:gets("target.image.name"):lower()
         
-        if command_lower:search(archivator_pattern) and target_path then
+        if command_lower:search(archivator_pattern) and archive_path then
             send_to_grouper(logline, target_path, "expand archive")
         elseif contains(shells, image_name) and contains(extentions, command_lower, "sub") and target_path then
             send_to_grouper(logline, target_path, "run archive")
         end
     else
-        if #(logline:gets("initiator.command.executed")) == 0 then
-            local target_path = (logline:gets("raw"):lower()):match("\"DestinationPath\";%s+value=\"([%w:.\\]*)\"")
-            set_field_value(logline, "target.object.path.name", target_path)
+        if #(logline:gets("target.object.path.name")) == 0 then                                                     -- 
+            local target_path = (logline:gets("raw"):lower()):match("\"DestinationPath\";%s+value=\"([%w:.\\]*)\"") -- Костыль - удалить!!!
+            set_field_value(logline, "target.object.path.name", target_path)                                        --
         end
         
         set_field_value(logline, "operation.type", "expand archive")
@@ -136,8 +137,10 @@ function on_grouped(grouped)
 
             if operation_type == "run archive" then
                 log_exec = event
+                log("Log exec catched!")
             else
                 log_extract = event
+                log("Log extract catched!")
             end
         end
 
@@ -155,7 +158,10 @@ function on_grouped(grouped)
                 risk=6.0,
                 mitre={"T1036"},
                 title="Подозрение на выполнение нелегитимных программ из архивов"
-        }
+            }
+
+            alert_function(events, meta)
+            grouper1:clear()
         end
     end
 end
