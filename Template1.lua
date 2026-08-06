@@ -19,7 +19,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 -- Параметры группера
 local detection_window = "30s"
-local grouped_by1 = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.auth.logon.id"}
+local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.auth.logon.id"}
 local aggregated_by = {"observer.event.id"}
 local grouped_time_field = "@timestamp,RFC3339"
 
@@ -106,13 +106,19 @@ function on_grouped(grouped)
         end
 
         if log_1 and log_2 then
-            local initiator_name = log_1:gets("initiator.user.name")  
-            local host_ip = log_2:get("observer.host.ip")
-            local host_name = log_2:gets("observer.host.hostname")
-            local host_fqdn = log_2:gets("observer.host.fqdn")
-            local program_name = log_1:gets("target.image.name")
-            local command_executed = string_cut(log_2:gets("initiator.command.executed"))
-            local process_path = log_2:get("target.process.path.full")
+            local meta = {
+                user=first_event:gets("initiator.user.name"),
+                command=string_cut(table.concat(commands, "; ")),
+                path=first_event:gets("target.process.path.full"),
+                program=first_event:gets("target.image.name"),
+                parent=first_event:gets("initiator.process.parent.path.original"),
+                ip=first_event:gets("observer.host.ip"),
+                hostname=first_event:gets("observer.host.hostname"),
+                fqdn=first_event:gets("observer.host.fqdn"),
+                risk=4.0,
+                mitre={"T1036"},
+                title="Обнаружен запуск системного файла из сторонней директории"
+            }
 
             alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, service_name, process_path, source_path, output_path)
             grouper1:clear()
@@ -307,4 +313,23 @@ local function log_on_logline(event)
         log("Command regex result: " .. tostring(command_executed:match('[\"\']((%a:\\[^\"\']+)%.exe)[\'\"\\]*')))
         log("Find MMC: " .. tostring(command_executed:find("slonopotam")))
     end
+end
+
+-- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
+local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
+    log("### " .. grouper_name .. " ###")
+    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+    
+    for _, event in ipairs(events) do
+        local event_id = event:gets("observer.event.id")
+        log("Event ID: " .. tostring(event_id) .. ". Grouper field: " .. tostring(event:gets(grouper_field)))
+        
+        if event_id == 4688 then 
+            local command_executed = event:gets("initiator.command.executed")
+            log("Command executed: " .. command_executed)
+        else
+            local process_path = event:gets("target.process.path.original")
+            log("Process path: " ..process_path)
+        end
+    end    
 end
