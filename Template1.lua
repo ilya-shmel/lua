@@ -120,7 +120,7 @@ function on_grouped(grouped)
                 title="Обнаружен запуск системного файла из сторонней директории"
             }
 
-            alert_function(events, host_ip, host_name, host_fqdn, initiator_name, command_executed, program_name, service_name, process_path, source_path, output_path)
+            alert_function(events, meta)
             grouper1:clear()
         end
 
