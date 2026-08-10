@@ -24,19 +24,19 @@ local grouped_time_field = "@timestamp,RFC3339"
 -- Шаблоны и паттерны
 local target_objects_patterns = {
     {   
-        comandlets = {"get-wmiobject", "get-ciminstance"},   
+        cmdlets = {"get-wmiobject", "get-ciminstance"},   
         parameters = {"msacpi_thermalzonetemperature", "class win32_computersystem", "win32_computersystem", "win32_logicaldisk", "win32_processor", "win32_physicalmemory", "win32_bios", "win32_baseboard", "win32_videocontroller", "win32_operatingsystem", "win32_product", "win32_networkadapter", "win32_systemenclosure", "win32_sounddevice", "win32_desktopmonitor", }
     },
     {
-        comandlets = {"get-process"},
+        cmdlets = {"get-process"},
         parameters = {"vbox", "vmware", "vmtoolsd", "vboxservice", "vmwaretray", "vmacthlp", "vboxtray", "vmsrvc", "df5serv", "prl_tools"}
     },
     {
-        comandlets = {"test-path"},
+        cmdlets = {"test-path"},
         parameters = {"vmsmb", "vboxminirdrdn", "cdrom0"}
     },
      {
-        comandlets = {"get-service"},
+        cmdlets = {"get-service"},
         parameters = {"vmtools", "vmdebug", "vmmouse", "vmmemctl", "vmhgfs", "vboxguest", "vboxservice", "vboxsf", "vboxmouse", "vmicheartbeat", "vmicvss", "vmicshutdown", "vmiexchange", "vmcompute", "hvhost", "vmsrvc"}
     }
 }
@@ -99,33 +99,35 @@ end
 
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd, object)
-    local cmd_lower = cmd:lower()
-    
-    local debug_info = {
-        {"Command: ", cmd},
-        {"Object: ", object},
-    }
+    local function is_contain(string, pattern_table, subelement)
+        for _, pattern in ipairs(pattern_table) do
+            if contains(pattern[subelement], string) then return true end
+        end
 
+        return false
+    end
+
+    local cmd_lower = cmd:lower()
+    local is_cmdlet, is_command, is_command_parameter, is_cmdlet_parameter
+    
     if object then
         local object_lower = object:lower()
-        for _, pattern in ipairs(target_objects_patterns) do
-            if contains(pattern.comandlets, cmd_lower) then
-                table.insert(debug_info, {"Is comandlet: ", "true"})
-                if contains(pattern.parameters, object_lower) then 
-                    table.insert(debug_info, {"Is parameters: ", "true"})
-                    return true 
-                end
-            end
+        is_cmdlet = is_contain(cmd_lower, target_objects_patterns, "cmdlets")
+            
+        if is_cmdlet then
+            is_cmdlet_parameter = is_contain(object_lower, target_objects_patterns, "parameters")
         end
     else
         for _, pattern in ipairs(command_line_patterns) do
-            if cmd_lower:search(pattern.command) then
-                if contains(pattern.parameters, cmd_lower) then return true end
+            is_command = cmd_lower:search(pattern.command)
+            
+            if is_command then
+                is_command_parameter = is_contain(cmd_lower, pattern, "parameters")
             end
         end
     end
 
-    log_results("analyze", debug_info)
+    if is_cmdlet_parameter or is_command_parameter then return true end
 
     return false
 end
@@ -196,7 +198,7 @@ function on_grouped(grouped)
                 hostname=first_event:gets("observer.host.hostname"),
                 fqdn=first_event:gets("observer.host.fqdn"),
                 risk=7.0,
-                mitre={"T1497", "T1497.001"},
+                mitre={"T1497", "T1497.001", "T1497.003"},
                 title="Подозрение на попытку определения выполнения ОС в среде виртуализации"
             }
 
@@ -205,14 +207,14 @@ function on_grouped(grouped)
         end
     end
 
-    local debug_info = {
-        {"Events: ", #events },
-        {"Unique events: ", unique_events},
-        {"Number of commands: ", #commands},
-        {"Number of comandlets: ", #objects}
-    }
-
-    log_results("on_grouped", debug_info)
+--    local debug_info = {
+--        {"Events: ", #events },
+--        {"Unique events: ", unique_events},
+--        {"Number of commands: ", #commands},
+--        {"Number of cmdlets: ", #objects}
+--    }
+--
+--    log_results("on_grouped", debug_info)
 
 end
 
