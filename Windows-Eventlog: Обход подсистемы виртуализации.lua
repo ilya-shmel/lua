@@ -12,59 +12,58 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Имя программы: {{ .Meta.program }}
-Процесс/Путь к иcполняемому файлу: {{ .Meta.path }}
-Родительский процесс: {{ .Meta.parent }}
+Выполненные командлеты и параметры: {{ .Meta.objects }}
 ]]
 
 -- Параметры группера
 local detection_window = "30s"
 local grouped_by = {"observer.host.ip", "observer.host.hostname", "observer.host.fqdn", "event.rule.description"}
-local aggregated_by = {"observer.event.id"}
+local aggregated_by = {"target.object.name"}
 local grouped_time_field = "@timestamp,RFC3339"
 
 -- Шаблоны и паттерны
 local target_objects_patterns = {
     {   
-        comandlets = {"Get-WmiObject", "Get-CimInstance"},   
-        parameters = {"MSAcpi_ThermalZoneTemperature", "Class Win32_ComputerSystem", "Win32_ComputerSystem", "Win32_LogicalDisk", "Win32_Processor", "Win32_PhysicalMemory", "Win32_BIOS", "Win32_BaseBoard", "Win32_VideoController", "Win32_OperatingSystem", "Win32_Product", "Win32_NetworkAdapter", "Win32_SystemEnclosure", "Win32_SoundDevice", "Win32_DesktopMonitor", }
+        comandlets = {"get-wmiobject", "get-ciminstance"},   
+        parameters = {"msacpi_thermalzonetemperature", "class win32_computersystem", "win32_computersystem", "win32_logicaldisk", "win32_processor", "win32_physicalmemory", "win32_bios", "win32_baseboard", "win32_videocontroller", "win32_operatingsystem", "win32_product", "win32_networkadapter", "win32_systemenclosure", "win32_sounddevice", "win32_desktopmonitor", }
     },
     {
-        comandlets = {"Get-Process"},
-        parameters = {"vbox", "vmware", "vmtoolsd", "VBoxService", "vmwaretray", "vmacthlp", "vboxtray", "vmsrvc", "df5serv", "prl_tools"}
+        comandlets = {"get-process"},
+        parameters = {"vbox", "vmware", "vmtoolsd", "vboxservice", "vmwaretray", "vmacthlp", "vboxtray", "vmsrvc", "df5serv", "prl_tools"}
     },
     {
-        comandlets = {"Test-Path"},
-        parameters = {"vmsmb", "VBoxMiniRdrDN", "CdRom0"}
+        comandlets = {"test-path"},
+        parameters = {"vmsmb", "vboxminirdrdn", "cdrom0"}
     },
      {
-        comandlets = {"Get-Service"},
-        parameters = {"vmtools", "vmdebug", "vmmouse", "VMMEMCTL", "vmhgfs", "VBoxGuest", "VBoxService", "VBoxSF", "VBoxMouse", "vmicheartbeat", "vmicvss", "vmicshutdown", "vmiexchange", "vmcompute", "hvhost", "vmsrvc"}
+        comandlets = {"get-service"},
+        parameters = {"vmtools", "vmdebug", "vmmouse", "vmmemctl", "vmhgfs", "vboxguest", "vboxservice", "vboxsf", "vboxmouse", "vmicheartbeat", "vmicvss", "vmicshutdown", "vmiexchange", "vmcompute", "hvhost", "vmsrvc"}
     }
 }
 local command_line_patterns = {
     {
         command = [=[[(?:^|\s+|"|'|\\)wmic[\s"':;][\s\w\/\\:'"]*get\s+]=],
-        parameters = {"cpu", "memorychip", "bios", "baseboard", "nic", "virtualization", "VirtualSystemSettingData"}
+        parameters = {"cpu", "memorychip", "bios", "baseboard", "nic", "virtualization", "virtualsystemsettingdata"}
     },
     {
         command = [=[(?:^|\s+|"|'|\\)tasklist\s*|\s*findstr[\s"':;]]=],
-        parameters = {"vmms", "vmwp", "qemu-ga", "hyper-v", "vmtoolsd", "VBoxService"}
+        parameters = {"vmms", "vmwp", "qemu-ga", "hyper-v", "vmtoolsd", "vboxservice"}
     },
     {
         command = [=[(?:^|\s+|"|'|\\)reg\s+query[\s"':;]]=],
-        parameters = {"HARDWARE", "BIOS", "SystemInformation", "Virtual Machine", "VBoxGuest", "vmhgfs", "VirtualBox", "VMware Tools", "DEVICEMAP", "VBOX__", "VBOX"}
+        parameters = {"hardware", "bios", "systeminformation", "virtual machine", "vboxguest", "vmhgfs", "virtualbox", "vmware tools", "devicemap", "vbox__", "vbox"}
     }
 }
 
--- Вспомогательная функция логирования значений в группере (удалить после тестирования на потоке)
-local function log_grouper(events, events_number, unique_events, grouper_name, grouper_field)
-    log("### " .. grouper_name .. " ###")
-    log("Events: " ..#events.. ". Unique events: " ..unique_events)
+-- Вспомогательная функция логирования значений
+local function log_results(function_name, debug_info)
+    log("=== function " .. function_name .. " ===")
+    log("Table elements: " .. #debug_info)
     
-    for _, event in ipairs(events) do
-	    log("Event ID: " .. tostring(event:gets("observer.event.id")))
-        log("Grouper field: " .. tostring(event:gets(grouper_field))) 
+    for _, line in ipairs(debug_info) do
+        local label = line[1]
+        local value = line[2]
+        log(label .. tostring(value))
     end    
 end
 
@@ -101,21 +100,32 @@ end
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd, object)
     local cmd_lower = cmd:lower()
-    if object then
-        object_lower = object:lower()
+    
+    local debug_info = {
+        {"Command: ", cmd},
+        {"Object: ", object},
+    }
 
+    if object then
+        local object_lower = object:lower()
         for _, pattern in ipairs(target_objects_patterns) do
             if contains(pattern.comandlets, cmd_lower) then
-                if contains(pattern.parameters, object_lower) then return true
+                table.insert(debug_info, {"Is comandlet: ", "true"})
+                if contains(pattern.parameters, object_lower) then 
+                    table.insert(debug_info, {"Is parameters: ", "true"})
+                    return true 
+                end
             end
         end
     else
         for _, pattern in ipairs(command_line_patterns) do
             if cmd_lower:search(pattern.command) then
-                if cmd_lower:search(pattern.parameters) then return true
+                if contains(pattern.parameters, cmd_lower) then return true end
             end
         end
     end
+
+    log_results("analyze", debug_info)
 
     return false
 end
@@ -123,47 +133,65 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
-    local is_vm
---    log_on_logline(logline)
+    local is_vm, target_object, process_command, object_name, command_executed
+
     if compare(event_id, "==", "4103") then
-        local process_command = logline:gets("initiator.process.command")
-        local object_name = logline:gets("target.object.name")
+        process_command = logline:gets("initiator.process.command")
+        object_name = logline:gets("target.object.name")
         is_vm = analyze(process_command, object_name)
     elseif compare(event_id, "==", "4688") then
-        local command_executed = logline:gets("initiator.command.executed")
-        is_vm = analyze(command_executed, nil)
+        command_executed = logline:gets("initiator.command.executed")
+        target_object = command_executed:match("%.exe\"?%s*([%s%S]*)")
+        is_vm = analyze(command_executed)
     end
 
     if is_vm then 
+        if target_object then 
+            set_field_value(logline, "target.object.name", target_object)
+        end
+        
         set_field_value(logline, "event.rule.description", "vm detection")
+        log("Send to grouper: " .. tostring(event_id))
         grouper1:feed(logline) 
     end
+
+--    local debug_info = {
+--        {"Event ID: ", event_id},
+--        {"Is VM: ", is_vm},
+--        {"Target object: ", target_object},
+--        {"Process command: ", process_command},
+--        {"Object name: ", object_name},
+--        {"Command executed ", command_executed}        
+--    }
+--
+--    log_results("on_logline", debug_info)
 end
 
 -- Функция группера #1
 function on_grouped(grouped)
     local events = grouped.aggregatedData.loglines
     local unique_events = grouped.aggregatedData.unique.total
-    local log_1, log_2
---    log_grouper(events, #events, unique_events, "on_grouped", grouped_by[4])
+    local first_event = events[1]
+    local commands = {}
+    local objects = {}
+
     if unique_events > 1 then
         for _, event in ipairs(events) do
-            local parameter = event:gets("..."):lower()
-
-            if syscall_name == "" then
-                log_1 = event
+            local process_command = event:gets("initiator.process.command")
+            
+            if #process_command > 0 then
+                table.insert(objects, {process_command, event:gets("target.object.name")})
             else
-                log_2 = event
+                local command_executed = event:gets("initiator.command.executed")
+                table.insert(commands, command_executed)
             end
         end
 
-        if log_1 and log_2 then
+        if (#commands + #objects) > 3 then
             local meta = {
                 user=first_event:gets("initiator.user.name"),
                 command=string_cut(table.concat(commands, "; ")),
-                path=first_event:gets("target.process.path.full"),
-                program=first_event:gets("target.image.name"),
-                parent=first_event:gets("initiator.process.parent.path.original"),
+                objects=string_cut(table.concat(objects, "; ")),               
                 ip=first_event:gets("observer.host.ip"),
                 hostname=first_event:gets("observer.host.hostname"),
                 fqdn=first_event:gets("observer.host.fqdn"),
@@ -175,8 +203,17 @@ function on_grouped(grouped)
             alert_function(events, meta)
             grouper1:clear()
         end
-
     end
+
+    local debug_info = {
+        {"Events: ", #events },
+        {"Unique events: ", unique_events},
+        {"Number of commands: ", #commands},
+        {"Number of comandlets: ", #objects}
+    }
+
+    log_results("on_grouped", debug_info)
+
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
