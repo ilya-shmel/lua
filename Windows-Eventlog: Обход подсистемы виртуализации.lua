@@ -12,7 +12,9 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Выполненные командлеты и параметры: {{ .Meta.objects }}
+Выполненные командлеты и параметры: 
+{{ .Meta.commandlets }};
+{{ .Meta.objects }}
 ]]
 
 -- Параметры группера
@@ -35,10 +37,22 @@ local target_objects_patterns = {
         cmdlets = {"test-path"},
         parameters = {"vmsmb", "vboxminirdrdn", "cdrom0"}
     },
-     {
+    {
         cmdlets = {"get-service"},
         parameters = {"vmtools", "vmdebug", "vmmouse", "vmmemctl", "vmhgfs", "vboxguest", "vboxservice", "vboxsf", "vboxmouse", "vmicheartbeat", "vmicvss", "vmicshutdown", "vmiexchange", "vmcompute", "hvhost", "vmsrvc"}
-    }
+    },
+    {
+        cmdlets = {"start-sleep"},
+        parameters = {"300", "300000", "30000", "180"}
+    },
+    {
+        cmdlets = {"test-connection", "get-netroute"},
+        parameters = {"1", "0.0.0.0/0"}
+    },
+    {
+        cmdlets = {"add-type"},
+        parameters = {"gettickcount", "createmutex", "waitforsingleobject"}
+    },
 }
 local command_line_patterns = {
     {
@@ -52,17 +66,12 @@ local command_line_patterns = {
     {
         command = [=[(?:^|\s+|"|'|\\)reg\s+query[\s"':;]]=],
         parameters = {"hardware", "bios", "systeminformation", "virtual machine", "vboxguest", "vmhgfs", "virtualbox", "vmware tools", "devicemap", "vbox__", "vbox"}
-    }
+    },
+    {
+        command = [=[(?:^|\s+|"|'|\\)ping(\.(?:exe|py))[\s"':;]]=],
+        parameters = {"127.0.0.1", "-n 1", "-n 301"}
+    },
 }
-
--- Функция удаления невидимых символов
-local function normalize_path(path)
-        path = path:lower()                             -- Приводим к нижнему регистру
-        path = path:gsub('["\']', '')                   -- Удаляем все кавычки (одинарные и двойные)
-        path = path:gsub('\\+$', '')                    -- Удаляем обратные слеши в конце (если есть)
-        path = path:gsub('^%s+', ''):gsub('%s+$', '')   -- Удаляем лишние пробелы
-    return path
-end
 
 -- Вспомогательная функция логирования значений
 local function log_results(function_name, debug_info)
@@ -108,58 +117,50 @@ end
 
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd, object)
-    -- вспомогателяная функция, для поиска по массиву значений
+--    log("=== analyze CALLED with object: " .. tostring(object) .. " ===")
     local function is_contain(string, pattern_table, subelement)
-        --log("Number of pattern elements: " .. tostring(#pattern_table))
-        --log("First element: " .. tostring(pattern_table[1]))
-        --log("A table: " .. tostring(pattern_table))
-        --log("Subelement: " .. tostring(pattern_table[subelement]))
-
-        if contains(pattern_table[subelement], string, "sub") then return true end
-
-        --local elements = pattern_table[subelement]
-        --local element1 = elements[1]
-        --log("First element: " .. element1)
-
-        --for _, pattern in pairs(pattern_table) do
-        --    log("Parameters table first element: " .. pattern[subelement][1])
-        --    if contains(pattern[subelement], string) then return true end
-        --end
-
+        if type(pattern_table[subelement]) == "table" then
+            if contains(pattern_table[subelement], string, "sub") then return true end
+            
+            return false
+        end
+        
+        for _, pattern in ipairs(pattern_table) do
+            if type(pattern[subelement]) == "table" then
+                if contains(pattern[subelement], string, "sub") then return true end
+            end
+        end
+        
         return false
     end
 
-    local cmd_lower = normalize_path(cmd)
-    local is_cmdlet, is_command, is_command_parameter, is_cmdlet_parameter
+    local cmd_lower = cmd:lower()
+    local object_lower = (object and object:lower()) or nil
+    local is_command_parameter, is_cmdlet_parameter
     
     if object then
-        local object_lower = object:lower()
-        is_cmdlet = is_contain(cmd_lower, target_objects_patterns, "cmdlets")
-            
-        if is_cmdlet then
+        if is_contain(cmd_lower, target_objects_patterns, "cmdlets") then
             is_cmdlet_parameter = is_contain(object_lower, target_objects_patterns, "parameters")
         end
     else
         for _, pattern in ipairs(command_line_patterns) do
-            is_command = cmd_lower:search(pattern.command)
-            
-            if is_command then
+            if cmd_lower:search(pattern.command) then
                 is_command_parameter = is_contain(cmd_lower, pattern, "parameters")
                 break
             end
         end
     end
 
-    local debug_info = {
-        {"Command: ", cmd_lower},
-        {"Object: ", object_lower},
-        {"Is cmdlet: ", is_cmdlet},
-        {"Is command: ", is_command},
-        {"Is command parameter: ", is_command_parameter},
-        {"Is cmdlet parameter: ", is_cmdlet_parameter}
-    }
-
-    log_results("analyze", debug_info)
+--    local debug_info = {
+--        {"Command: ", cmd_lower},
+--        {"Object: ", object_lower},
+--        {"Is cmdlet: ", is_cmdlet},
+--        {"Is command: ", is_command},
+--        {"Is command parameter: ", is_command_parameter},
+--        {"Is cmdlet parameter: ", is_cmdlet_parameter}
+--    }
+--
+--    log_results("analyze", debug_info)
 
     if is_cmdlet_parameter or is_command_parameter then return true end
 
@@ -169,27 +170,24 @@ end
 -- Функция обработки логлайна
 function on_logline(logline)
     local event_id = logline:gets("observer.event.id")
-    local is_vm, target_object, process_command, object_name, command_executed
+    local is_vm, target_object, process_command, command_executed
 
     if compare(event_id, "==", "4103") then
         process_command = logline:gets("initiator.process.command")
-        object_name = logline:gets("target.object.name")
-        is_vm = analyze(process_command, object_name)
+        target_object = logline:gets("target.object.name")
+        is_vm = analyze(process_command, target_object)
     elseif compare(event_id, "==", "4688") then
         command_executed = logline:gets("initiator.command.executed")
---        is_command = command_executed:lower():match('wmic')
---        log("Is command: " ..is_command)
         target_object = command_executed:match("%.exe\"?%s*([%s%S]*)")
         is_vm = analyze(command_executed)
     end
 
     if is_vm then 
-        if target_object then 
+        if target_object then
             set_field_value(logline, "target.object.name", target_object)
         end
         
         set_field_value(logline, "event.rule.description", "vm detection")
-        log("Send to grouper: " .. tostring(event_id))
         grouper1:feed(logline) 
     end
 
@@ -198,10 +196,10 @@ function on_logline(logline)
 --        {"Is VM: ", is_vm},
 --        {"Target object: ", target_object},
 --        {"Process command: ", process_command},
---        {"Object name: ", object_name},
+--        {"Object name: ", target_object},
 --        {"Command executed ", command_executed}        
 --    }
---
+
 --    log_results("on_logline", debug_info)
 end
 
@@ -211,25 +209,28 @@ function on_grouped(grouped)
     local unique_events = grouped.aggregatedData.unique.total
     local first_event = events[1]
     local commands = {}
-    local objects = {}
+    local cmdlets = {}
+    local target_objects = {}
 
     if unique_events > 1 then
         for _, event in ipairs(events) do
             local process_command = event:gets("initiator.process.command")
-            
+
             if #process_command > 0 then
-                table.insert(objects, {process_command, event:gets("target.object.name")})
+                table.insert(cmdlets, process_command)
+                table.insert(target_objects, event:gets("target.object.name"))
             else
                 local command_executed = event:gets("initiator.command.executed")
                 table.insert(commands, command_executed)
             end
         end
 
-        if (#commands + #objects) > 3 then
+        if (#commands + #cmdlets) > 3 then
             local meta = {
                 user=first_event:gets("initiator.user.name"),
                 command=string_cut(table.concat(commands, "; ")),
-                objects=string_cut(table.concat(objects, "; ")),               
+                commandlets=string_cut(table.concat(cmdlets, ";")),
+                objects=string_cut(table.concat(target_objects, "; ")),               
                 ip=first_event:gets("observer.host.ip"),
                 hostname=first_event:gets("observer.host.hostname"),
                 fqdn=first_event:gets("observer.host.fqdn"),
@@ -243,14 +244,16 @@ function on_grouped(grouped)
         end
     end
 
---    local debug_info = {
---        {"Events: ", #events },
---        {"Unique events: ", unique_events},
---        {"Number of commands: ", #commands},
---        {"Number of cmdlets: ", #objects}
---    }
---
---    log_results("on_grouped", debug_info)
+    local debug_info = {
+        {"Events: ", #events },
+        {"Unique events: ", unique_events},
+        {"Number of commands: ", #commands},
+        {"Number of objects: ", #target_objects},
+        {"First object: ", target_objects[1]},
+        {"Second object: ", target_objects[2]}
+    }
+
+    log_results("on_grouped", debug_info)
 
 end
 
