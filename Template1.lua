@@ -188,7 +188,10 @@ function on_grouped(grouped)
             parent=first_event:gets("initiator.process.parent.path.original"),
             ip=first_event:gets("observer.host.ip"),
             hostname=first_event:gets("observer.host.hostname"),
-            fqdn=first_event:gets("observer.host.fqdn")
+            fqdn=first_event:gets("observer.host.fqdn"),
+            risk=7.0,
+            mitre={"T1497", "T1497.001", "T1497.003"},
+            title="Подозрение на попытку определения выполнения ОС в среде виртуализации"
         }
 
         alert_function(events, meta)
@@ -343,3 +346,11 @@ local function log_grouper(events, events_number, unique_events, grouper_name, g
 	    log("Event ID: " .. tostring(event:gets("observer.event.id")) .. ". Grouper field: " .. tostring(event:gets(grouper_field)))
     end    
 end
+
+-- Шаблоны и паттерны
+command_patterns = {
+    {
+        pattern = [[]],
+        parameters = {} 
+    }
+}

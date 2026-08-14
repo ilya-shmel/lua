@@ -73,18 +73,6 @@ local command_line_patterns = {
     },
 }
 
--- Вспомогательная функция логирования значений
-local function log_results(function_name, debug_info)
-    log("=== function " .. function_name .. " ===")
-    log("Table elements: " .. #debug_info)
-    
-    for _, line in ipairs(debug_info) do
-        local label = line[1]
-        local value = line[2]
-        log(label .. tostring(value))
-    end    
-end
-
 -- Функция алерта
 local function alert_function(events, meta)
     alert({
@@ -117,7 +105,6 @@ end
 
 -- Функция анализа строки по регулярному выражению
 local function analyze(cmd, object)
---    log("=== analyze CALLED with object: " .. tostring(object) .. " ===")
     local function is_contain(string, pattern_table, subelement)
         if type(pattern_table[subelement]) == "table" then
             if contains(pattern_table[subelement], string, "sub") then return true end
@@ -151,17 +138,6 @@ local function analyze(cmd, object)
         end
     end
 
---    local debug_info = {
---        {"Command: ", cmd_lower},
---        {"Object: ", object_lower},
---        {"Is cmdlet: ", is_cmdlet},
---        {"Is command: ", is_command},
---        {"Is command parameter: ", is_command_parameter},
---        {"Is cmdlet parameter: ", is_cmdlet_parameter}
---    }
---
---    log_results("analyze", debug_info)
-
     if is_cmdlet_parameter or is_command_parameter then return true end
 
     return false
@@ -190,17 +166,6 @@ function on_logline(logline)
         set_field_value(logline, "event.rule.description", "vm detection")
         grouper1:feed(logline) 
     end
-
---    local debug_info = {
---        {"Event ID: ", event_id},
---        {"Is VM: ", is_vm},
---        {"Target object: ", target_object},
---        {"Process command: ", process_command},
---        {"Object name: ", target_object},
---        {"Command executed ", command_executed}        
---    }
-
---    log_results("on_logline", debug_info)
 end
 
 -- Функция группера #1
@@ -243,18 +208,6 @@ function on_grouped(grouped)
             grouper1:clear()
         end
     end
-
-    local debug_info = {
-        {"Events: ", #events },
-        {"Unique events: ", unique_events},
-        {"Number of commands: ", #commands},
-        {"Number of objects: ", #target_objects},
-        {"First object: ", target_objects[1]},
-        {"Second object: ", target_objects[2]}
-    }
-
-    log_results("on_grouped", debug_info)
-
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
