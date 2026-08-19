@@ -12,7 +12,7 @@ FQDN: {{ or .Meta.fqdn "FQDN узла не определено" }}
 
 ВЫПОЛНЕННАЯ КОМАНДА:
 {{ .Meta.command }}
-Задействованные объекты: {{ or .Meta.object "Оьбъекты не зафиксированы" }}
+Задействованные объекты: {{ or .Meta.object "Оббъекты не зафиксированы" }}
 ]]
 
 -- Параметры группера
@@ -52,7 +52,7 @@ local power_patterns = {
     }
 }
 
-local script_text_pattern = [[(?:^|"|'|;|\s+|\\|\/)param\([\w\s,=\[\]\$\(\)'".:]+\)]]
+local script_text_markers = {"param%s*%(", "foreach%s*%(", "try%s*{", "add%-member", "write%-verbose", "function%s+"}
 
 -- Вспомогательная функция логирования значений
 local function log_results(function_name, debug_info)
@@ -64,6 +64,40 @@ local function log_results(function_name, debug_info)
         local value = line[2]
         log(label .. tostring(value))
     end    
+end
+
+local function is_script_text(cmd)
+    local marker_count = 0
+    local var_count = 0
+
+    if #cmd > 400 then return true -- Проверяем число символов
+    elseif #cmd > 200 then
+          
+        for _, marker in ipairs(script_text_markers) do -- Считаем признаки скрипта
+            if cmd:match(marker) then
+                marker_count = marker_count + 1
+            end
+        end
+
+        for _ in cmd:gmatch("%$[%w_]+") do -- Считаем переменные
+            var_count = var_count + 1
+        end
+    end
+    
+    if cmd:search("adspath") then
+        local diag_info = {
+            {"Command's length: ", #cmd},
+            {"Markers count: ", marker_count},
+            {"Variables count: ", var_count}
+        }
+
+        log_results("is_script_text", diag_info)
+    end
+
+    if marker_count > 1 and var_count > 9 then return true end
+
+    return false
+
 end
 
 -- Функция алерта
@@ -105,7 +139,7 @@ function on_logline(logline)
         
         for _, pattern in ipairs(power_patterns) do
             if command_executed:search(pattern.main_pattern) then
-                if pattern.cmdlets and not command_executed:search(script_text_pattern) then
+                if pattern.cmdlets and not is_script_text(command_executed) then
                     if contains(pattern.cmdlets, command_executed, "sub") then grouper1:feed(logline) end
                 else
                     grouper1:feed(logline)
@@ -153,13 +187,6 @@ function on_grouped(grouped)
             grouper1:clear()
         end
     end
-
-    local debug_info = {
-        {"Events: ", #events },
-        {"Unique events: ", unique_events}
-    }
-
-    log_results("on_grouped", debug_info)
 end
 
 grouper1 = grouper.new(grouped_by, aggregated_by, grouped_time_field, detection_window, on_grouped)
