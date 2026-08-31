@@ -197,12 +197,12 @@ ips =
 {
     -- use this to enable decoder and inspector alerts
     --enable_builtin_rules = true,
-
     -- use include for rules files; be sure to set your path
     -- note that rules files can include other rules files
-    include = '/usr/local/etc/snort/rules/local.rules',
     -- (see also related path vars at the top of snort_defaults.lua)
-
+    
+    enable_builtin_rules = true,
+    include = '/usr/local/etc/snort/rules/local.rules',
     variables = default_variables
 }
 
@@ -220,19 +220,12 @@ ips =
 -- below are examples of filters
 -- each table is a list of records
 
---[[
 suppress =
 {
-    -- don't want to any of see these
-    { gid = 1, sid = 1 },
-
-    -- don't want to see anything for a given host
-    { track = 'by_dst', ip = '1.2.3.4' }
-
     -- don't want to see these for a given host
-    { gid = 1, sid = 2, track = 'by_dst', ip = '1.2.3.4' },
+    { gid = 116, sid = 6, track = 'by_dst', ip = '172.30.250.168' }
 }
---]]
+
 
 --[[
 event_filter =
@@ -280,13 +273,12 @@ rate_filter =
 --packet_capture = { }
 --file_log = { }
 
--- Настройка логгера SYSLOG
-alert_syslog = {
-    facility = "local5",          -- syslog facility
-    level = "info",
-    options = { "ndelay", "pid" }               -- add PID to tag
+-- Настройка логгера JSON
+alert_json = {
+    file = true, -- Включаем запись в файл вместо stdout
+    fields = 'action app_id class b64_data client_bytes client_pkts dir dst_addr dst_ap dst_port eth_dst eth_len eth_src eth_type flowstart_time geneve_vni gid icmp_code icmp_id icmp_seq icmp_type iface ip_id ip_len msg mpls pkt_gen pkt_len pkt_num priority proto rev rule seconds server_bytes server_pkts service sgt sid src_addr src_ap src_port target tcp_ack tcp_flags tcp_len tcp_seq tcp_win timestamp tos ttl udp_len vlan', -- Список полей, которые попадут в JSON
+    limit = 4096
 }
-
 ---------------------------------------------------------------------------
 -- 8. configure tweaks
 ---------------------------------------------------------------------------
